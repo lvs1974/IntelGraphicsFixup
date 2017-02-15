@@ -19,25 +19,16 @@ static KernelPatcher *callbackPatcher = nullptr;
 
 static const char *kextHD5000Path[] { "/System/Library/Extensions/AppleIntelHD5000Graphics.kext/Contents/MacOS/AppleIntelHD5000Graphics" };
 static const char *kextIOGraphicsPath[] { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
-static const char *kextIOPciFamilyPath[] { "/System/Library/Extensions/IOPCIFamily.kext/IOPCIFamily" };
 
 static KernelPatcher::KextInfo kextList[] {
 	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.iokit.IOPCIFamily", kextIOPciFamilyPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded }
+    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded }
 };
 
-static size_t kextListSize {3};
+static size_t kextListSize {2};
 
 bool IGFX::init() {
-	// Do not disable restoreMachineState unless we are asked to
-	char tmp[16];
-	if (!PE_parse_boot_argn("-igfxstatefix", tmp, sizeof(tmp))) {
-		progressState |= ProcessingState::RestoreMachineStateDisabled;
-		kextListSize = 2;
-	}
-	
-	LiluAPI::Error error = lilu.onKextLoad(kextList, kextListSize,
+    LiluAPI::Error error = lilu.onKextLoad(kextList, kextListSize,
 	[](void *user, KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
 		callbackIgfx = static_cast<IGFX *>(user);
 		callbackPatcher = &patcher;
@@ -117,18 +108,6 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                     } else {
                         SYSLOG("igfx @ failed to resolve __ZL16gIOFBVerboseBoot");
                     }
-				} else if (!(progressState & ProcessingState::RestoreMachineStateDisabled) && !strcmp(kextList[i].id, "com.apple.iokit.IOPCIFamily")) {
-					auto restoreMachineState = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZN11IOPCIBridge19restoreMachineStateEjP11IOPCIDevice"));
-					if (restoreMachineState) {
-						DBGLOG("igfx @ obtained __ZN11IOPCIBridge19restoreMachineStateEjP11IOPCIDevice");
-						if (MachInfo::setKernelWriting(true) == KERN_SUCCESS) {
-							*reinterpret_cast<uint8_t *>(restoreMachineState) = 0xC3;
-							MachInfo::setKernelWriting(false);
-							progressState |= ProcessingState::RestoreMachineStateDisabled;
-						} else {
-							SYSLOG("igfx @ failed to change kernel protection");
-						}
-					}
 				}
 			}
 		}
