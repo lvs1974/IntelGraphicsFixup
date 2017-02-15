@@ -66,8 +66,7 @@ private:
 			NothingReady = 0,
 			CallbackPavpSessionRouted = 2,
             CallbackFrameBufferInitRouted = 4,
-			RestoreMachineStateDisabled = 8,
-			EverythingDone = CallbackPavpSessionRouted | CallbackFrameBufferInitRouted | RestoreMachineStateDisabled,
+			EverythingDone = CallbackPavpSessionRouted | CallbackFrameBufferInitRouted,
 		};
 	};
     int progressState {ProcessingState::NothingReady};
