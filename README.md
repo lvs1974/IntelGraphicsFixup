@@ -6,7 +6,6 @@ An open source kernel extension providing patches to select Intel GPUs.
 #### Features
 - Fixes PAVP freezes on Intel Azul Graphics (HD4400, HD4600)
 - Fixes boot logo on all known Intel Graphics starting with HD4000
-- Fixes hibernation on Aspire E1-572 on 10.12.1 and later (requires -igfxstatefix)
 
 #### Credits
 - [Apple](https://www.apple.com) for macOS  
