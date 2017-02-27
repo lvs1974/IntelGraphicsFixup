@@ -22,7 +22,7 @@ static const char *kextIOGraphicsPath[] { "/System/Library/Extensions/IOGraphics
 
 static KernelPatcher::KextInfo kextList[] {
 	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded }
+    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded }
 };
 
 static size_t kextListSize {2};
