@@ -18,14 +18,16 @@ static IGFX *callbackIgfx = nullptr;
 static KernelPatcher *callbackPatcher = nullptr;
 
 static const char *kextHD5000Path[] { "/System/Library/Extensions/AppleIntelHD5000Graphics.kext/Contents/MacOS/AppleIntelHD5000Graphics" };
+static const char *kextSKLPath[] { "/System/Library/Extensions/AppleIntelSKLGraphics.kext/Contents/MacOS/AppleIntelSKLGraphics" };
 static const char *kextIOGraphicsPath[] { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
 
 static KernelPatcher::KextInfo kextList[] {
 	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded }
+    { "com.apple.driver.AppleIntelSKLGraphics", kextSKLPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded },
 };
 
-static size_t kextListSize {2};
+static size_t kextListSize {3};
 
 bool IGFX::init() {
     LiluAPI::Error error = lilu.onKextLoad(kextList, kextListSize,
@@ -75,8 +77,9 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 	if (progressState != ProcessingState::EverythingDone) {
 		for (size_t i = 0; i < kextListSize; i++) {
 			if (kextList[i].loadIndex == index) {
-                if (!(progressState & ProcessingState::CallbackPavpSessionRouted) && !strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD5000Graphics")) {
-                    DBGLOG("igfx @ found com.apple.driver.AppleIntelHD5000Graphics");
+                if (!(progressState & ProcessingState::CallbackPavpSessionRouted) && (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD5000Graphics") ||
+                	!strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphics"))) {
+                    DBGLOG("igfx @ found %s", kextList[i].id);
                     auto sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
                     if (sessionCallback) {
                         DBGLOG("igfx @ obtained __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
