@@ -14,3 +14,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.1.1
 - Sky Lake support
+
+#### v1.1.2
+- Display initialization fix for SkyLake Graphics
