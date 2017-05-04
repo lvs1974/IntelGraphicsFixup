@@ -39,19 +39,26 @@ private:
     /**
      *  frameBufferInit type
      */
-    using t_frame_buffer_init = void (*)(void *);
+    using t_frame_buffer_init_callback = void (*)(void *);
+    
+    /**
+     *  computeLaneCount callback type
+     */
+    using t_compute_lane_count_callback = bool (*)(void *framebuffer, void *unk1, unsigned int unk2, int unk3, int *lane_count);
 	
 	/**
 	 *  Hooked methods / callbacks
 	 */
     static uint32_t pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t passed_session_cmd, uint32_t a3, uint32_t *a4, bool passed_flag);
     static void frameBufferInit(void *that);
+    static bool computeLaneCount(void *framebuffer, void *unk1, unsigned int unk2, int unk3, int *lane_count);
 
 	/**
 	 *  Trampolines for original method invocations
 	 */
     t_pavp_session_callback orgPavpSessionCallback {nullptr};
-    t_frame_buffer_init orgFrameBufferInit {nullptr};
+    t_frame_buffer_init_callback orgFrameBufferInit {nullptr};
+    t_compute_lane_count_callback orgComputeLaneCount {nullptr};
 
     /**
      *  external global variables
@@ -66,7 +73,8 @@ private:
 			NothingReady = 0,
 			CallbackPavpSessionRouted = 2,
             CallbackFrameBufferInitRouted = 4,
-			EverythingDone = CallbackPavpSessionRouted | CallbackFrameBufferInitRouted,
+            CallbackSKLComputeLaneCountRouted = 8,
+			EverythingDone = CallbackPavpSessionRouted | CallbackFrameBufferInitRouted | CallbackSKLComputeLaneCountRouted,
 		};
 	};
     int progressState {ProcessingState::NothingReady};
