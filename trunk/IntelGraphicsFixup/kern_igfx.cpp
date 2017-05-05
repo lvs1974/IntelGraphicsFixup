@@ -25,7 +25,7 @@ static const char *kextIOGraphicsPath[]     { "/System/Library/Extensions/IOGrap
 static KernelPatcher::KextInfo kextList[] {
 	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelSKLGraphics", kextSKLPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded },
 };
 
@@ -75,15 +75,18 @@ void IGFX::frameBufferInit(void *that) {
     }
 }
 
-bool IGFX::computeLaneCount(void *framebuffer, void *unk1, unsigned int unk2, int unk3, int *lane_count) {
-    DBGLOG("igfx @ computeLaneCount: unk2 = %d, unk3 = %d", unk2, unk3);
-    
-    if (!callbackIgfx->orgComputeLaneCount(framebuffer, unk1, unk2, unk3, lane_count)) {
-        SYSLOG("igfx @ computeLaneCount fixing lane_count %d", *lane_count);
-        *lane_count = 1;
+bool IGFX::computeLaneCount(void *framebuffer, void *unk1, unsigned int bpp, int unk3, int *lane_count) {
+	// unk3 is read in AppleIntelFramebufferController::GetDPCDInfo
+	DBGLOG("igfx @ computeLaneCount: bpp = %d, unk3 = %d", bpp, unk3); // 24 0
+	
+	// HD 530 reports to have 0 lanes max
+	bool r = callbackIgfx->orgComputeLaneCount(framebuffer, unk1, bpp, unk3, lane_count);
+    if (!r && *lane_count == 0) {
+        DBGLOG("igfx @ reporting worked lane count");
+		r = true;
     }
     
-    return true;
+    return r;
 }
 
 void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
@@ -102,7 +105,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                             DBGLOG("igfx @ routed __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
                             progressState |= ProcessingState::CallbackPavpSessionRouted;
                         } else {
-                            SYSLOG("igfx @ failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
+                            DBGLOG("igfx @ failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
                         }
                     } else {
                         SYSLOG("igfx @ failed to resolve __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
@@ -114,11 +117,11 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                     DBGLOG("igfx @ found com.apple.iokit.IOGraphicsFamily");
                     gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
                     if (gIOFBVerboseBootPtr) {
-                        DBGLOG("igfx @ obtained __ZL16gIOFBVerboseBoot");
+                        SYSLOG("igfx @ obtained __ZL16gIOFBVerboseBoot");
                         auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
                         if (ioFramebufferinit) {
                             DBGLOG("igfx @ obtained __ZN13IOFramebuffer6initFBEv");
-                            orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init_callback>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
+                            orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
                             if (patcher.getError() == KernelPatcher::Error::NoError) {
                                 DBGLOG("igfx @ routed __ZN13IOFramebuffer6initFBEv");
                                 progressState |= ProcessingState::CallbackFrameBufferInitRouted;
@@ -137,15 +140,13 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                     auto compute_lane_count = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
                     if (compute_lane_count) {
                         DBGLOG("igfx @ obtained __ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
-                        orgComputeLaneCount = reinterpret_cast<t_compute_lane_count_callback>(patcher.routeFunction(compute_lane_count, reinterpret_cast<mach_vm_address_t>(computeLaneCount), true));
+                        orgComputeLaneCount = reinterpret_cast<t_compute_lane_count>(patcher.routeFunction(compute_lane_count, reinterpret_cast<mach_vm_address_t>(computeLaneCount), true));
                         if (patcher.getError() == KernelPatcher::Error::NoError) {
                             DBGLOG("igfx @ routed __ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
                             progressState |= ProcessingState::CallbackSKLComputeLaneCountRouted;
                         } else {
                             SYSLOG("igfx @ failed to route __ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
                         }
-                    } else {
-                        SYSLOG("igfx @ failed to resolve __ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
                     }
                 }
 			}
