@@ -71,9 +71,9 @@ private:
 	struct ProcessingState {
 		enum {
 			NothingReady = 0,
-			CallbackPavpSessionRouted = 2,
-            CallbackFrameBufferInitRouted = 4,
-            CallbackSKLComputeLaneCountRouted = 8,
+			CallbackPavpSessionRouted = 1,
+            CallbackFrameBufferInitRouted = 2,
+            CallbackSKLComputeLaneCountRouted = 4,
 			EverythingDone = CallbackPavpSessionRouted | CallbackFrameBufferInitRouted | CallbackSKLComputeLaneCountRouted,
 		};
 	};
