@@ -17,3 +17,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.1.2
 - Display initialization fix for SkyLake Graphics
+
+#### v1.1.3
+- Added OSBundleCompatibleVersion
