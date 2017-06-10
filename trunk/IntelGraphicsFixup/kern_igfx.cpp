@@ -20,16 +20,20 @@ static KernelPatcher *callbackPatcher = nullptr;
 static const char *kextHD5000Path[]         { "/System/Library/Extensions/AppleIntelHD5000Graphics.kext/Contents/MacOS/AppleIntelHD5000Graphics" };
 static const char *kextSKLPath[]            { "/System/Library/Extensions/AppleIntelSKLGraphics.kext/Contents/MacOS/AppleIntelSKLGraphics" };
 static const char *kextSKLFramebufferPath[] { "/System/Library/Extensions/AppleIntelSKLGraphicsFramebuffer.kext/Contents/MacOS/AppleIntelSKLGraphicsFramebuffer" };
+static const char *kextKBLPath[]            { "/System/Library/Extensions/AppleIntelKBLGraphics.kext/Contents/MacOS/AppleIntelKBLGraphics" };
+static const char *kextKBLFramebufferPath[] { "/System/Library/Extensions/AppleIntelKBLGraphicsFramebuffer.kext/Contents/MacOS/AppleIntelKBLGraphicsFramebuffer" };
 static const char *kextIOGraphicsPath[]     { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
 
 static KernelPatcher::KextInfo kextList[] {
 	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelSKLGraphics", kextSKLPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelKBLGraphics", kextKBLPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelKBLGraphicsFramebuffer", kextKBLFramebufferPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded },
 };
 
-static size_t kextListSize {4};
+static size_t kextListSize {sizeof(kextList)/sizeof(kextList[0])};
 
 bool IGFX::init() {
     LiluAPI::Error error = lilu.onKextLoad(kextList, kextListSize,
@@ -93,8 +97,10 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 	if (progressState != ProcessingState::EverythingDone) {
 		for (size_t i = 0; i < kextListSize; i++) {
 			if (kextList[i].loadIndex == index) {
-                if (!(progressState & ProcessingState::CallbackPavpSessionRouted) && (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD5000Graphics") ||
-                	!strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphics")))
+                if (!(progressState & ProcessingState::CallbackPavpSessionRouted) &&
+                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD5000Graphics") ||
+                	 !strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphics") ||
+                     !strcmp(kextList[i].id, "com.apple.driver.AppleIntelKBLGraphics")))
                 {
                     DBGLOG("igfx @ found %s", kextList[i].id);
                     auto sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
@@ -114,7 +120,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                 
                 if (!(progressState & ProcessingState::CallbackFrameBufferInitRouted) && !strcmp(kextList[i].id, "com.apple.iokit.IOGraphicsFamily"))
                 {
-                    DBGLOG("igfx @ found com.apple.iokit.IOGraphicsFamily");
+                    DBGLOG("igfx @ found %s", kextList[i].id);
                     gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
                     if (gIOFBVerboseBootPtr) {
                         SYSLOG("igfx @ obtained __ZL16gIOFBVerboseBoot");
@@ -134,16 +140,18 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                     }
 				}
                 
-                if (!(progressState & ProcessingState::CallbackSKLComputeLaneCountRouted) && !strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphicsFramebuffer"))
+                if (!(progressState & ProcessingState::CallbackComputeLaneCountRouted) &&
+                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphicsFramebuffer") ||
+                     !strcmp(kextList[i].id, "com.apple.driver.AppleIntelKBLGraphicsFramebuffer")))
                 {
-                    DBGLOG("igfx @ found com.apple.driver.AppleIntelSKLGraphicsFramebuffer");
+                    DBGLOG("igfx @ found %s", kextList[i].id);
                     auto compute_lane_count = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
                     if (compute_lane_count) {
                         DBGLOG("igfx @ obtained __ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
                         orgComputeLaneCount = reinterpret_cast<t_compute_lane_count>(patcher.routeFunction(compute_lane_count, reinterpret_cast<mach_vm_address_t>(computeLaneCount), true));
                         if (patcher.getError() == KernelPatcher::Error::NoError) {
                             DBGLOG("igfx @ routed __ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
-                            progressState |= ProcessingState::CallbackSKLComputeLaneCountRouted;
+                            progressState |= ProcessingState::CallbackComputeLaneCountRouted;
                         } else {
                             SYSLOG("igfx @ failed to route __ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
                         }

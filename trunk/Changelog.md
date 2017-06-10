@@ -20,3 +20,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.1.3
 - Added OSBundleCompatibleVersion
+
+#### v1.1.4
+- Fix for Kaby Lake Graphics added
