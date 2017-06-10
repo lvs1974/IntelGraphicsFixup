@@ -71,10 +71,10 @@ private:
 	struct ProcessingState {
 		enum {
 			NothingReady = 0,
-			CallbackPavpSessionRouted = 2,
-            CallbackFrameBufferInitRouted = 4,
-            CallbackSKLComputeLaneCountRouted = 8,
-			EverythingDone = CallbackPavpSessionRouted | CallbackFrameBufferInitRouted | CallbackSKLComputeLaneCountRouted,
+			CallbackPavpSessionRouted = 1,
+            CallbackFrameBufferInitRouted = 2,
+            CallbackComputeLaneCountRouted = 4,
+			EverythingDone = CallbackPavpSessionRouted | CallbackFrameBufferInitRouted | CallbackComputeLaneCountRouted,
 		};
 	};
     int progressState {ProcessingState::NothingReady};
