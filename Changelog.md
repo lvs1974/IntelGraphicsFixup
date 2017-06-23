@@ -22,4 +22,7 @@ IntelGraphicsFixup Changelog
 - Added OSBundleCompatibleVersion
 
 #### v1.1.4
-- Fix for Kaby Lake Graphics added
+- Fix for Kaby Lake Graphics added (Display initialization)
+
+#### v1.1.5
+- Fix for Azul Graphics added (Display initialization)
