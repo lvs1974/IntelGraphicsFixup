@@ -13,4 +13,4 @@ An open source kernel extension providing patches to select Intel GPUs.
 - [vit9696](https://github.com/vit9696) for [Lilu.kext](https://github.com/vit9696/Lilu), PAVP reversing and AppleIntelFramebuffer reversing
 - [YungRaj] for fix for Sky Lake 
 - [lvs1974](https://applelife.ru/members/lvs1974.53809/) for writing the software and maintaining it
-- [Vandroiy] for testing & fix for Kaby Lake
+- [Vandroiy] for testing & frame buffer fix for Kaby Lake and Azul
