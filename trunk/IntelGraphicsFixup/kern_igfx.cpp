@@ -26,13 +26,13 @@ static const char *kextKBLFramebufferPath[]  { "/System/Library/Extensions/Apple
 static const char *kextIOGraphicsPath[]      { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
 
 static KernelPatcher::KextInfo kextList[] {
-	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelFramebufferAzul", kextAzulFramebufferPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelSKLGraphics", kextSKLPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelKBLGraphics", kextKBLPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelKBLGraphicsFramebuffer", kextKBLFramebufferPath, 1, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, true, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelFramebufferAzul", kextAzulFramebufferPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelSKLGraphics", kextSKLPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelKBLGraphics", kextKBLPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelKBLGraphicsFramebuffer", kextKBLFramebufferPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.iokit.IOGraphicsFamily", kextIOGraphicsPath, 1, true, false, {}, KernelPatcher::KextInfo::Unloaded },
 };
 
 static size_t kextListSize {sizeof(kextList)/sizeof(kextList[0])};
@@ -108,6 +108,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                     auto sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
                     if (sessionCallback) {
                         DBGLOG("igfx @ obtained __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
+                        patcher.clearError();
                         orgPavpSessionCallback = reinterpret_cast<t_pavp_session_callback>(patcher.routeFunction(sessionCallback, reinterpret_cast<mach_vm_address_t>(pavpSessionCallback), true));
                         if (patcher.getError() == KernelPatcher::Error::NoError) {
                             DBGLOG("igfx @ routed __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
@@ -125,10 +126,11 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                     DBGLOG("igfx @ found %s", kextList[i].id);
                     gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
                     if (gIOFBVerboseBootPtr) {
-                        SYSLOG("igfx @ obtained __ZL16gIOFBVerboseBoot");
+                        DBGLOG("igfx @ obtained __ZL16gIOFBVerboseBoot");
                         auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
                         if (ioFramebufferinit) {
                             DBGLOG("igfx @ obtained __ZN13IOFramebuffer6initFBEv");
+                            patcher.clearError();
                             orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
                             if (patcher.getError() == KernelPatcher::Error::NoError) {
                                 DBGLOG("igfx @ routed __ZN13IOFramebuffer6initFBEv");
@@ -153,6 +155,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                         compute_lane_count = patcher.solveSymbol(index, "__ZN24AppleIntelAzulController16ComputeLaneCountEPK29IODetailedTimingInformationV2jj");
                     if (compute_lane_count) {
                         DBGLOG("igfx @ obtained ComputeLaneCount");
+                        patcher.clearError();
                         orgComputeLaneCount = reinterpret_cast<t_compute_lane_count>(patcher.routeFunction(compute_lane_count, reinterpret_cast<mach_vm_address_t>(computeLaneCount), true));
                         if (patcher.getError() == KernelPatcher::Error::NoError) {
                             DBGLOG("igfx @ routed ComputeLaneCount");
