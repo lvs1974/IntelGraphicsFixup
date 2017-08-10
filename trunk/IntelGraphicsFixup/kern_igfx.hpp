@@ -1,6 +1,6 @@
 //
-//  kern_azul_pavp_disabler.hpp
-//  AzulPAVPDisabler_impl
+//  kern_igfx.hpp
+//  IGFX
 //
 //  Copyright © 2017 lvs1974. All rights reserved.
 //
@@ -45,13 +45,14 @@ private:
      *  computeLaneCount type
      */
     using t_compute_lane_count = bool (*)(void *, void *, unsigned int, int, int *);
+    
 	
 	/**
 	 *  Hooked methods / callbacks
 	 */
     static uint32_t pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t passed_session_cmd, uint32_t a3, uint32_t *a4, bool passed_flag);
     static void frameBufferInit(void *that);
-    static bool computeLaneCount(void *framebuffer, void *unk1, unsigned int bpp, int unk3, int *lane_count);
+    static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
 
 	/**
 	 *  Trampolines for original method invocations
@@ -59,7 +60,7 @@ private:
     t_pavp_session_callback orgPavpSessionCallback {nullptr};
     t_frame_buffer_init orgFrameBufferInit {nullptr};
     t_compute_lane_count orgComputeLaneCount {nullptr};
-
+    
     /**
      *  external global variables
      */

@@ -1,6 +1,6 @@
 //
-//  kern_azul_pavp_disabler.cpp
-//  AzulPAVPDisabler_impl
+//  kern_igfx.cpp
+//  IGFX
 //
 //  Copyright © 2017 lvs1974. All rights reserved.
 //
@@ -18,7 +18,6 @@ static IGFX *callbackIgfx = nullptr;
 static KernelPatcher *callbackPatcher = nullptr;
 
 static const char *kextHD5000Path[]          { "/System/Library/Extensions/AppleIntelHD5000Graphics.kext/Contents/MacOS/AppleIntelHD5000Graphics" };
-static const char *kextAzulFramebufferPath[] { "/System/Library/Extensions/AppleIntelFramebufferAzul.kext/Contents/MacOS/AppleIntelFramebufferAzul" };
 static const char *kextSKLPath[]             { "/System/Library/Extensions/AppleIntelSKLGraphics.kext/Contents/MacOS/AppleIntelSKLGraphics" };
 static const char *kextSKLFramebufferPath[]  { "/System/Library/Extensions/AppleIntelSKLGraphicsFramebuffer.kext/Contents/MacOS/AppleIntelSKLGraphicsFramebuffer" };
 static const char *kextKBLPath[]             { "/System/Library/Extensions/AppleIntelKBLGraphics.kext/Contents/MacOS/AppleIntelKBLGraphics" };
@@ -27,7 +26,6 @@ static const char *kextIOGraphicsPath[]      { "/System/Library/Extensions/IOGra
 
 static KernelPatcher::KextInfo kextList[] {
 	{ "com.apple.driver.AppleIntelHD5000Graphics", kextHD5000Path, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelFramebufferAzul", kextAzulFramebufferPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelSKLGraphics", kextSKLPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelKBLGraphics", kextKBLPath, 1, false, false, {}, KernelPatcher::KextInfo::Unloaded },
@@ -81,12 +79,12 @@ void IGFX::frameBufferInit(void *that) {
     }
 }
 
-bool IGFX::computeLaneCount(void *framebuffer, void *unk1, unsigned int bpp, int unk3, int *lane_count) {
+bool IGFX::computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count) {
 	// unk3 is read in AppleIntelFramebufferController::GetDPCDInfo
 	DBGLOG("igfx @ computeLaneCount: bpp = %d, unk3 = %d", bpp, unk3); // 24 0
 	
 	// HD 530 reports to have 0 lanes max
-	bool r = callbackIgfx->orgComputeLaneCount(framebuffer, unk1, bpp, unk3, lane_count);
+	bool r = callbackIgfx->orgComputeLaneCount(that, unk1, bpp, unk3, lane_count);
     if (!r && *lane_count == 0) {
         DBGLOG("igfx @ reporting worked lane count");
 		r = true;
@@ -114,7 +112,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                             DBGLOG("igfx @ routed __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
                             progressState |= ProcessingState::CallbackPavpSessionRouted;
                         } else {
-                            DBGLOG("igfx @ failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
+                            SYSLOG("igfx @ failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
                         }
                     } else {
                         SYSLOG("igfx @ failed to resolve __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
@@ -145,14 +143,11 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 				}
                 
                 if (!(progressState & ProcessingState::CallbackComputeLaneCountRouted) &&
-                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelFramebufferAzul") ||
-                     !strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphicsFramebuffer") ||
+                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphicsFramebuffer") ||
                      !strcmp(kextList[i].id, "com.apple.driver.AppleIntelKBLGraphicsFramebuffer")))
                 {
                     DBGLOG("igfx @ found %s", kextList[i].id);
                     auto compute_lane_count = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
-                    if (!compute_lane_count && getKernelVersion() >= KernelVersion::Sierra)
-                        compute_lane_count = patcher.solveSymbol(index, "__ZN24AppleIntelAzulController16ComputeLaneCountEPK29IODetailedTimingInformationV2jj");
                     if (compute_lane_count) {
                         DBGLOG("igfx @ obtained ComputeLaneCount");
                         patcher.clearError();
@@ -163,6 +158,8 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                         } else {
                             SYSLOG("igfx @ failed to route ComputeLaneCount");
                         }
+                    } else {
+                        SYSLOG("igfx @ failed to resolve ComputeLaneCount");
                     }
                 }
 			}
