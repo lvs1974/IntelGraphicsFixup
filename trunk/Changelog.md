@@ -26,3 +26,9 @@ IntelGraphicsFixup Changelog
 
 #### v1.1.5
 - Fix for Azul Graphics added (Display initialization)
+
+#### v1.1.6
+- HighSierra compatibility, and bug fix: clear error status before routing
+
+#### v1.1.7
+- Fix for HD4000 added (credits to PMHeart)

@@ -86,8 +86,8 @@
 			isa = PBXGroup;
 			children = (
 				1C748C2C1C21952C0024EED2 /* kern_start.cpp */,
-				1C9CB7AE1C789FF500231E41 /* kern_igfx.cpp */,
 				1C9CB7AF1C789FF500231E41 /* kern_igfx.hpp */,
+				1C9CB7AE1C789FF500231E41 /* kern_igfx.cpp */,
 				1C748C2E1C21952C0024EED2 /* Info.plist */,
 			);
 			path = IntelGraphicsFixup;
@@ -328,7 +328,7 @@
 				MODULE_NAME = as.lvs1974.IntelGraphicsFixup;
 				MODULE_START = "$(PRODUCT_NAME)_kern_start";
 				MODULE_STOP = "$(PRODUCT_NAME)_kern_stop";
-				MODULE_VERSION = 1.1.6;
+				MODULE_VERSION = 1.1.7;
 				OTHER_CFLAGS = (
 					"-mmmx",
 					"-msse",
@@ -372,7 +372,7 @@
 				MODULE_NAME = as.lvs1974.IntelGraphicsFixup;
 				MODULE_START = "$(PRODUCT_NAME)_kern_start";
 				MODULE_STOP = "$(PRODUCT_NAME)_kern_stop";
-				MODULE_VERSION = 1.1.6;
+				MODULE_VERSION = 1.1.7;
 				OTHER_CFLAGS = (
 					"-mmmx",
 					"-msse",
