@@ -26,7 +26,7 @@ static const char *bootargBeta[] {
 
 PluginConfiguration ADDPR(config) {
 	xStringify(PRODUCT_NAME),
-    parseModuleVersion(xStringify(MODULE_VERSION)),
+	parseModuleVersion(xStringify(MODULE_VERSION)),
 	bootargOff,
 	sizeof(bootargOff)/sizeof(bootargOff[0]),
 	bootargDebug,
