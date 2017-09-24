@@ -32,3 +32,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.1.7
 - Fix for HD4000 added (credits to PMHeart)
+
+#### v1.2.0
+- XCode 9 & Lilu 1.2.0 compatibility fixes (Lilu 1.2.0 is required)
