@@ -136,24 +136,28 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 				
 				
 				if (!(progressState & ProcessingState::CallbackFrameBufferInitRouted) && !strcmp(kextList[i].id, "com.apple.iokit.IOGraphicsFamily")) {
-					gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
-					if (gIOFBVerboseBootPtr) {
-						DBGLOG("igfx", "obtained __ZL16gIOFBVerboseBoot");
-						auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
-						if (ioFramebufferinit) {
-							DBGLOG("igfx", "obtained __ZN13IOFramebuffer6initFBEv");
-							patcher.clearError();
-							orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
-							if (patcher.getError() == KernelPatcher::Error::NoError) {
-								DBGLOG("igfx", "routed __ZN13IOFramebuffer6initFBEv");
-								progressState |= ProcessingState::CallbackFrameBufferInitRouted;
-							} else {
-								SYSLOG("igfx", "failed to route __ZN13IOFramebuffer6initFBEv");
-							}
-						}
-					} else {
-						SYSLOG("igfx", "failed to resolve __ZL16gIOFBVerboseBoot");
-					}
+                    if (getKernelVersion() >= KernelVersion::Yosemite) {
+                        gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
+                        if (gIOFBVerboseBootPtr) {
+                            DBGLOG("igfx", "obtained __ZL16gIOFBVerboseBoot");
+                            auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
+                            if (ioFramebufferinit) {
+                                DBGLOG("igfx", "obtained __ZN13IOFramebuffer6initFBEv");
+                                patcher.clearError();
+                                orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
+                                if (patcher.getError() == KernelPatcher::Error::NoError) {
+                                    DBGLOG("igfx", "routed __ZN13IOFramebuffer6initFBEv");
+                                    progressState |= ProcessingState::CallbackFrameBufferInitRouted;
+                                } else {
+                                    SYSLOG("igfx", "failed to route __ZN13IOFramebuffer6initFBEv");
+                                }
+                            }
+                        } else {
+                            SYSLOG("igfx", "failed to resolve __ZL16gIOFBVerboseBoot");
+                        }
+                    } else {
+                        progressState |= ProcessingState::CallbackFrameBufferInitRouted;
+                    }
 				}
 				
 				if (!(progressState & ProcessingState::CallbackComputeLaneCountRouted) &&
