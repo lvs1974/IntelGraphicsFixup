@@ -8,9 +8,6 @@
 #include <Headers/kern_api.hpp>
 #include <Library/LegacyIOService.h>
 
-#include <mach/vm_map.h>
-#include <IOKit/IORegistryEntry.h>
-
 #include "kern_igfx.hpp"
 
 // Only used in apple-driven callbacks
@@ -26,13 +23,13 @@ static const char *kextKBLFramebufferPath[]  { "/System/Library/Extensions/Apple
 static const char *kextIOGraphicsPath[]      { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
 
 static KernelPatcher::KextInfo kextList[] {
-    { "com.apple.driver.AppleIntelHD4000Graphics",         kextHD4000Path,         1, {false, false}, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelHD5000Graphics",         kextHD5000Path,         1, {false, false}, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelSKLGraphics",            kextSKLPath,            1, {false, false}, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, {false, false}, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelKBLGraphics",            kextKBLPath,            1, {false, false}, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.driver.AppleIntelKBLGraphicsFramebuffer", kextKBLFramebufferPath, 1, {false, false}, {}, KernelPatcher::KextInfo::Unloaded },
-    { "com.apple.iokit.IOGraphicsFamily",                  kextIOGraphicsPath,     1, {true,  false}, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelHD4000Graphics",         kextHD4000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelHD5000Graphics",         kextHD5000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelSKLGraphics",            kextSKLPath,            1, {}, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, {}, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelKBLGraphics",            kextKBLPath,            1, {}, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.driver.AppleIntelKBLGraphicsFramebuffer", kextKBLFramebufferPath, 1, {}, {}, KernelPatcher::KextInfo::Unloaded },
+    { "com.apple.iokit.IOGraphicsFamily",                  kextIOGraphicsPath,     1, {true}, {}, KernelPatcher::KextInfo::Unloaded },
 };
 
 static size_t kextListSize = arrsize(kextList);
@@ -97,11 +94,12 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 	if (progressState != ProcessingState::EverythingDone) {
 		for (size_t i = 0; i < kextListSize; i++) {
 			if (kextList[i].loadIndex == index) {
+				DBGLOG("igfx", "found %s (%d)", kextList[i].id, progressState);
+
 				if (!(progressState & ProcessingState::CallbackPavpSessionRouted) &&
 					(!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD5000Graphics") ||
 					 !strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphics") ||
 					 !strcmp(kextList[i].id, "com.apple.driver.AppleIntelKBLGraphics"))) {
-					DBGLOG("igfx", "found %s", kextList[i].id);
 					auto sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
 					if (sessionCallback) {
 						DBGLOG("igfx", "obtained __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
@@ -138,7 +136,6 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 				
 				
 				if (!(progressState & ProcessingState::CallbackFrameBufferInitRouted) && !strcmp(kextList[i].id, "com.apple.iokit.IOGraphicsFamily")) {
-					DBGLOG("igfx", "found %s", kextList[i].id);
 					gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
 					if (gIOFBVerboseBootPtr) {
 						DBGLOG("igfx", "obtained __ZL16gIOFBVerboseBoot");
@@ -185,4 +182,3 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 	// Ignore all the errors for other processors
 	patcher.clearError();
 }
-
