@@ -35,3 +35,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.2.0
 - XCode 9 & Lilu 1.2.0 compatibility fixes (Lilu 1.2.0 is required)
+
+#### v1.2.1
+- New boot  logo fix via restoring video memory content (no frame buffer reset)

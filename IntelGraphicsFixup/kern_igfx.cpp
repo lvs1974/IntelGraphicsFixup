@@ -7,6 +7,10 @@
 
 #include <Headers/kern_api.hpp>
 #include <Library/LegacyIOService.h>
+#include <IOKit/IOPlatformExpert.h>
+#define protected public
+#include <IOKit/graphics/IOFramebuffer.h>
+#undef protected
 
 #include "kern_igfx.hpp"
 
@@ -35,14 +39,28 @@ static KernelPatcher::KextInfo kextList[] {
 static size_t kextListSize = arrsize(kextList);
 
 bool IGFX::init() {
-	LiluAPI::Error error = lilu.onKextLoad(kextList, kextListSize, [](void *user, KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+	PE_parse_boot_argn("igfxrst", &resetFramebuffer, sizeof(resetFramebuffer));
+
+	// We need to load vinfo in all cases but reset
+	if (resetFramebuffer != FBRESET) {
+		auto error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher) {
+			static_cast<IGFX *>(user)->processKernel(patcher);
+		}, this);
+
+		if (error != LiluAPI::Error::NoError) {
+			SYSLOG("igfx", "failed to register onPatcherLoad method %d", error);
+			return false;
+		}
+	}
+
+	auto error = lilu.onKextLoad(kextList, kextListSize, [](void *user, KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
 		callbackIgfx = static_cast<IGFX *>(user);
 		callbackPatcher = &patcher;
 		callbackIgfx->processKext(patcher, index, address, size);
 	}, this);
 	
 	if (error != LiluAPI::Error::NoError) {
-		SYSLOG("igfx", "failed to register onPatcherLoad method %d", error);
+		SYSLOG("igfx", "failed to register onKextLoad method %d", error);
 		return false;
 	}
 	
@@ -69,10 +87,62 @@ uint32_t IGFX::pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_
 
 void IGFX::frameBufferInit(void *that) {
 	if (callbackIgfx && callbackPatcher && callbackIgfx->gIOFBVerboseBootPtr && callbackIgfx->orgFrameBufferInit) {
+		bool tryBackCopy = callbackIgfx->gotInfo && callbackIgfx->resetFramebuffer != FBRESET;
+		auto &info = callbackIgfx->vinfo;
+
+		// Copy back usually happens in a separate call to frameBufferInit
+		// Furthermore, v_baseaddr may not be available on subsequent calls, so we have to copy
+		if (tryBackCopy && info.v_baseaddr) {
+			callbackIgfx->consoleBuffer = Buffer::create<uint8_t>(info.v_rowbytes * info.v_height);
+            if (callbackIgfx->consoleBuffer)
+				lilu_os_memcpy(callbackIgfx->consoleBuffer, reinterpret_cast<uint8_t *>(info.v_baseaddr), info.v_rowbytes * info.v_height);
+            else
+				SYSLOG("igfx", "console buffer allocation failure");
+			// Even if we may succeed next time, it will be unreasonably dangerous
+			info.v_baseaddr = 0;
+		}
+
 		uint8_t verboseBoot = *callbackIgfx->gIOFBVerboseBootPtr;
-		*callbackIgfx->gIOFBVerboseBootPtr = 1;
+		// For back copy we need a console buffer and no verbose
+		tryBackCopy = tryBackCopy && callbackIgfx->consoleBuffer && !verboseBoot;
+
+		// Now check if the resolution and parameters match
+		auto fb = static_cast<IOFramebuffer *>(that);
+		if (tryBackCopy) {
+			IODisplayModeID mode;
+			IOIndex depth;
+			IOPixelInformation pixelInfo;
+
+			if (fb->getCurrentDisplayMode(&mode, &depth) == kIOReturnSuccess &&
+				fb->getPixelInformation(mode, depth, kIOFBSystemAperture, &pixelInfo) == kIOReturnSuccess) {
+				DBGLOG("igfx", "fb info 1: %d:%d %d:%d:%d",
+					   mode, depth, pixelInfo.bytesPerRow, pixelInfo.bytesPerPlane, pixelInfo.bitsPerPixel);
+				DBGLOG("igfx", "fb info 2: %d:%d %s %d:%d:%d",
+					   pixelInfo.componentCount, pixelInfo.bitsPerComponent, pixelInfo.pixelFormat, pixelInfo.flags, pixelInfo.activeWidth, pixelInfo.activeHeight);
+
+				if (info.v_rowbytes != pixelInfo.bytesPerRow || info.v_width != pixelInfo.activeWidth ||
+					info.v_height != pixelInfo.activeHeight || info.v_depth != pixelInfo.bitsPerPixel) {
+					tryBackCopy = false;
+					DBGLOG("igfx", "this display has different mode");
+				}
+			} else {
+				DBGLOG("igfx", "failed to obtain display mode");
+				tryBackCopy = false;
+			}
+		}
+
+		if (!tryBackCopy) *callbackIgfx->gIOFBVerboseBootPtr = 1;
 		callbackIgfx->orgFrameBufferInit(that);
-		*callbackIgfx->gIOFBVerboseBootPtr = verboseBoot;
+		if (!tryBackCopy) *callbackIgfx->gIOFBVerboseBootPtr = verboseBoot;
+
+		if (tryBackCopy && fb->fVramMap) {
+			auto src = reinterpret_cast<uint8_t *>(callbackIgfx->consoleBuffer);
+			auto dst = reinterpret_cast<uint8_t *>(fb->fVramMap->getVirtualAddress());
+
+			DBGLOG("igfx", "attempting to copy...");
+			// Here you can actually draw at your will, but looks like only on Intel.
+			lilu_os_memcpy(dst, src, info.v_rowbytes * info.v_height);
+		}
 	}
 }
 
@@ -88,6 +158,20 @@ bool IGFX::computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, 
 	}
 	
 	return r;
+}
+
+void IGFX::processKernel(KernelPatcher &patcher) {
+	auto info = reinterpret_cast<vc_info *>(patcher.solveSymbol(KernelPatcher::KernelID, "_vinfo"));
+	if (info) {
+		vinfo = *info;
+		DBGLOG("igfx", "vinfo 1: %d:%d %d:%d:%d",
+			   vinfo.v_height, vinfo.v_width, vinfo.v_depth, vinfo.v_rowbytes, vinfo.v_type);
+		DBGLOG("igfx", "vinfo 2: %s %d:%d %d:%d:%d",
+			   vinfo.v_name, vinfo.v_rows, vinfo.v_columns, vinfo.v_rowscanbytes, vinfo.v_scale, vinfo.v_rotate);
+		gotInfo = true;
+	} else {
+		SYSLOG("igfx", "failed to obtain vcinfo");
+	}
 }
 
 void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
@@ -136,28 +220,28 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 				
 				
 				if (!(progressState & ProcessingState::CallbackFrameBufferInitRouted) && !strcmp(kextList[i].id, "com.apple.iokit.IOGraphicsFamily")) {
-                    if (getKernelVersion() >= KernelVersion::Yosemite) {
-                        gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
-                        if (gIOFBVerboseBootPtr) {
-                            DBGLOG("igfx", "obtained __ZL16gIOFBVerboseBoot");
-                            auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
-                            if (ioFramebufferinit) {
-                                DBGLOG("igfx", "obtained __ZN13IOFramebuffer6initFBEv");
-                                patcher.clearError();
-                                orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
-                                if (patcher.getError() == KernelPatcher::Error::NoError) {
-                                    DBGLOG("igfx", "routed __ZN13IOFramebuffer6initFBEv");
-                                    progressState |= ProcessingState::CallbackFrameBufferInitRouted;
-                                } else {
-                                    SYSLOG("igfx", "failed to route __ZN13IOFramebuffer6initFBEv");
-                                }
-                            }
-                        } else {
-                            SYSLOG("igfx", "failed to resolve __ZL16gIOFBVerboseBoot");
-                        }
-                    } else {
-                        progressState |= ProcessingState::CallbackFrameBufferInitRouted;
-                    }
+					if (getKernelVersion() >= KernelVersion::Yosemite) {
+						gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
+						if (gIOFBVerboseBootPtr) {
+							DBGLOG("igfx", "obtained __ZL16gIOFBVerboseBoot");
+							auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
+							if (ioFramebufferinit) {
+								DBGLOG("igfx", "obtained __ZN13IOFramebuffer6initFBEv");
+								patcher.clearError();
+								orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
+								if (patcher.getError() == KernelPatcher::Error::NoError) {
+									DBGLOG("igfx", "routed __ZN13IOFramebuffer6initFBEv");
+									progressState |= ProcessingState::CallbackFrameBufferInitRouted;
+								} else {
+									SYSLOG("igfx", "failed to route __ZN13IOFramebuffer6initFBEv");
+								}
+							}
+						} else {
+							SYSLOG("igfx", "failed to resolve __ZL16gIOFBVerboseBoot");
+						}
+					} else {
+						progressState |= ProcessingState::CallbackFrameBufferInitRouted;
+					}
 				}
 				
 				if (!(progressState & ProcessingState::CallbackComputeLaneCountRouted) &&
