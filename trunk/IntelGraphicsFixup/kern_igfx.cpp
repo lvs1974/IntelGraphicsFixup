@@ -172,6 +172,9 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 	} else {
 		SYSLOG("igfx", "failed to obtain vcinfo");
 	}
+    
+    // Ignore all the errors for other processors
+    patcher.clearError();
 }
 
 void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
