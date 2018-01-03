@@ -53,6 +53,12 @@ private:
 	 *  computeLaneCount type
 	 */
 	using t_compute_lane_count = bool (*)(void *, void *, unsigned int, int, int *);
+    
+    /**
+     *  AppleIntelXXXXGraphics::start callback type
+     */
+    using t_intel_graphics_start = bool (*) (IOService *that, IOService *);
+    
 
 	/**
 	 *  Hooked methods / callbacks
@@ -60,6 +66,7 @@ private:
 	static uint32_t pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t passed_session_cmd, uint32_t a3, uint32_t *a4, bool passed_flag);
 	static void frameBufferInit(void *that);
 	static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
+    static bool intelGraphicsStart(IOService *that, IOService *provider);
 
 	/**
 	 *  Trampolines for original method invocations
@@ -131,7 +138,8 @@ private:
 			CallbackPavpSessionHD4000Routed = 2,
 			CallbackFrameBufferInitRouted = 4,
 			CallbackComputeLaneCountRouted = 8,
-			EverythingDone = CallbackPavpSessionRouted | CallbackPavpSessionHD4000Routed | CallbackFrameBufferInitRouted | CallbackComputeLaneCountRouted,
+            CallbackVesaMode = 16,
+			EverythingDone = CallbackPavpSessionRouted | CallbackPavpSessionHD4000Routed | CallbackFrameBufferInitRouted | CallbackComputeLaneCountRouted | CallbackVesaMode,
 		};
 	};
 	int progressState {ProcessingState::NothingReady};

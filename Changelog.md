@@ -38,3 +38,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.2.1
 - New boot  logo fix via restoring video memory content (no frame buffer reset)
+
+#### v1.2.2
+- New boot-arg -igfxvesa is supported (to disable intel video acceleration completely)
