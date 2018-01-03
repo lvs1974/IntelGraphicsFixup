@@ -40,6 +40,10 @@ static size_t kextListSize = arrsize(kextList);
 
 bool IGFX::init() {
 	PE_parse_boot_argn("igfxrst", &resetFramebuffer, sizeof(resetFramebuffer));
+    
+    char tmp[20];
+    if (!PE_parse_boot_argn("-igfxvesa", tmp, sizeof(tmp)))
+        progressState |= ProcessingState::CallbackVesaMode;
 
 	// We need to load vinfo in all cases but reset
 	if (resetFramebuffer != FBRESET) {
@@ -160,6 +164,12 @@ bool IGFX::computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, 
 	return r;
 }
 
+bool IGFX::intelGraphicsStart(IOService *that, IOService *provider)
+{
+    DBGLOG("Intel Graphics", "Prevent starting controller");
+    return false;
+}
+
 void IGFX::processKernel(KernelPatcher &patcher) {
 	auto info = reinterpret_cast<vc_info *>(patcher.solveSymbol(KernelPatcher::KernelID, "_vinfo"));
 	if (info) {
@@ -266,6 +276,28 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 						SYSLOG("igfx", "failed to resolve ComputeLaneCount");
 					}
 				}
+                
+                if (!(progressState & ProcessingState::CallbackVesaMode) &&
+                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD4000Graphics") ||
+                     !strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD5000Graphics") ||
+                     !strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphics") ||
+                     !strcmp(kextList[i].id, "com.apple.driver.AppleIntelKBLGraphics"))) {
+                
+                    auto acceleratorStart = patcher.solveSymbol(index, "__ZN16IntelAccelerator5startEP9IOService");
+                    if (acceleratorStart) {
+                        DBGLOG("igfx", "obtained IntelAccelerato::start");
+                        patcher.clearError();
+                        patcher.routeFunction(acceleratorStart, reinterpret_cast<mach_vm_address_t>(intelGraphicsStart), true);
+                        if (patcher.getError() == KernelPatcher::Error::NoError) {
+                            DBGLOG("igfx", "routed IntelAccelerator::start");
+                            progressState |= ProcessingState::CallbackVesaMode;
+                        } else {
+                            SYSLOG("igfx", "failed to route IntelAccelerator::start");
+                        }
+                    } else {
+                        SYSLOG("igfx", "failed to resolve IntelAccelerator::start");
+                    }
+                }
 			}
 		}
 	}
