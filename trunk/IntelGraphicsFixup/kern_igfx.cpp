@@ -285,7 +285,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
                 
                     auto acceleratorStart = patcher.solveSymbol(index, "__ZN16IntelAccelerator5startEP9IOService");
                     if (acceleratorStart) {
-                        DBGLOG("igfx", "obtained IntelAccelerato::start");
+                        DBGLOG("igfx", "obtained IntelAccelerator::start");
                         patcher.clearError();
                         patcher.routeFunction(acceleratorStart, reinterpret_cast<mach_vm_address_t>(intelGraphicsStart), true);
                         if (patcher.getError() == KernelPatcher::Error::NoError) {
