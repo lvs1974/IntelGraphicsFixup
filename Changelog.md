@@ -41,3 +41,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.2.2
 - New boot-arg -igfxvesa is supported (to disable intel video acceleration completely)
+
+#### v1.2.3
+- Fix up will be loaded in safe mode (required to fix black screen)
