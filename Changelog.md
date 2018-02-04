@@ -44,3 +44,6 @@ IntelGraphicsFixup Changelog
 
 #### v1.2.3
 - Fix up will be loaded in safe mode (required to fix black screen)
+
+#### v1.2.4
+- Fix for HD3000 added (credits to syscl)

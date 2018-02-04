@@ -135,11 +135,12 @@ private:
 		enum {
 			NothingReady = 0,
 			CallbackPavpSessionRouted = 1,
-			CallbackPavpSessionHD4000Routed = 2,
-			CallbackFrameBufferInitRouted = 4,
-			CallbackComputeLaneCountRouted = 8,
-            CallbackVesaMode = 16,
-			EverythingDone = CallbackPavpSessionRouted | CallbackPavpSessionHD4000Routed | CallbackFrameBufferInitRouted | CallbackComputeLaneCountRouted | CallbackVesaMode,
+            CallbackPavpSessionHD3000Routed = 2,
+			CallbackPavpSessionHD4000Routed = 4,
+			CallbackFrameBufferInitRouted = 8,
+			CallbackComputeLaneCountRouted = 16,
+            CallbackVesaMode = 32,
+			EverythingDone = CallbackPavpSessionRouted | CallbackPavpSessionHD3000Routed | CallbackPavpSessionHD4000Routed | CallbackFrameBufferInitRouted | CallbackComputeLaneCountRouted | CallbackVesaMode,
 		};
 	};
 	int progressState {ProcessingState::NothingReady};

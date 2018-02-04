@@ -18,6 +18,7 @@
 static IGFX *callbackIgfx = nullptr;
 static KernelPatcher *callbackPatcher = nullptr;
 
+static const char *kextHD3000Path[]          { "System/Library/Extensions/AppleIntelHD3000Graphics.kext/Contents/MacOS/AppleIntelHD3000Graphics" };
 static const char *kextHD4000Path[]          { "/System/Library/Extensions/AppleIntelHD4000Graphics.kext/Contents/MacOS/AppleIntelHD4000Graphics" };
 static const char *kextHD5000Path[]          { "/System/Library/Extensions/AppleIntelHD5000Graphics.kext/Contents/MacOS/AppleIntelHD5000Graphics" };
 static const char *kextSKLPath[]             { "/System/Library/Extensions/AppleIntelSKLGraphics.kext/Contents/MacOS/AppleIntelSKLGraphics" };
@@ -27,6 +28,7 @@ static const char *kextKBLFramebufferPath[]  { "/System/Library/Extensions/Apple
 static const char *kextIOGraphicsPath[]      { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
 
 static KernelPatcher::KextInfo kextList[] {
+    { "com.apple.driver.AppleIntelHD3000Graphics",         kextHD3000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelHD4000Graphics",         kextHD4000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelHD5000Graphics",         kextHD5000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
     { "com.apple.driver.AppleIntelSKLGraphics",            kextSKLPath,            1, {}, {}, KernelPatcher::KextInfo::Unloaded },
@@ -213,23 +215,41 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 					}
 				}
 				
-				if (!(progressState & ProcessingState::CallbackPavpSessionHD4000Routed) &&
-					(!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD4000Graphics"))) {
-					auto sessionCallbackHD4000 = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-					if (sessionCallbackHD4000) {
-						DBGLOG("igfx", "obtained __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+				if (!(progressState & ProcessingState::CallbackPavpSessionHD3000Routed) &&
+					(!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD3000Graphics"))) {
+					auto sessionCallbackHD3000 = patcher.solveSymbol(index, "__ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+					if (sessionCallbackHD3000) {
+						DBGLOG("igfx", "obtained __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
 						patcher.clearError();
-						orgPavpSessionCallback = reinterpret_cast<t_pavp_session_callback>(patcher.routeFunction(sessionCallbackHD4000, reinterpret_cast<mach_vm_address_t>(pavpSessionCallback), true));
+						orgPavpSessionCallback = reinterpret_cast<t_pavp_session_callback>(patcher.routeFunction(sessionCallbackHD3000, reinterpret_cast<mach_vm_address_t>(pavpSessionCallback), true));
 						if (patcher.getError() == KernelPatcher::Error::NoError) {
-							DBGLOG("igfx", "routed __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-							progressState |= ProcessingState::CallbackPavpSessionHD4000Routed;
+							DBGLOG("igfx", "routed __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+							progressState |= ProcessingState::CallbackPavpSessionHD3000Routed;
 						} else {
-							SYSLOG("igfx", "failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+							SYSLOG("igfx", "failed to route __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
 						}
 					} else {
-						SYSLOG("igfx", "failed to resolve __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+						SYSLOG("igfx", "failed to resolve __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
 					}
 				}
+                
+                if (!(progressState & ProcessingState::CallbackPavpSessionHD4000Routed) &&
+                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD4000Graphics"))) {
+                    auto sessionCallbackHD4000 = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+                    if (sessionCallbackHD4000) {
+                        DBGLOG("igfx", "obtained __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+                        patcher.clearError();
+                        orgPavpSessionCallback = reinterpret_cast<t_pavp_session_callback>(patcher.routeFunction(sessionCallbackHD4000, reinterpret_cast<mach_vm_address_t>(pavpSessionCallback), true));
+                        if (patcher.getError() == KernelPatcher::Error::NoError) {
+                            DBGLOG("igfx", "routed __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+                            progressState |= ProcessingState::CallbackPavpSessionHD4000Routed;
+                        } else {
+                            SYSLOG("igfx", "failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+                        }
+                    } else {
+                        SYSLOG("igfx", "failed to resolve __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+                    }
+                }
 				
 				
 				if (!(progressState & ProcessingState::CallbackFrameBufferInitRouted) && !strcmp(kextList[i].id, "com.apple.iokit.IOGraphicsFamily")) {
@@ -278,7 +298,8 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 				}
                 
                 if (!(progressState & ProcessingState::CallbackVesaMode) &&
-                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD4000Graphics") ||
+                    (!strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD3000Graphics") ||
+                     !strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD4000Graphics") ||
                      !strcmp(kextList[i].id, "com.apple.driver.AppleIntelHD5000Graphics") ||
                      !strcmp(kextList[i].id, "com.apple.driver.AppleIntelSKLGraphics") ||
                      !strcmp(kextList[i].id, "com.apple.driver.AppleIntelKBLGraphics"))) {

@@ -15,3 +15,4 @@ An open source kernel extension providing patches to select Intel GPUs.
 - [lvs1974](https://applelife.ru/members/lvs1974.53809/) for writing the software and maintaining it
 - [Vandroiy] for testing & frame buffer fix for Kaby Lake and Azul
 - [PMheart](https://github.com/PMheart) for writing the fix for HD4000
+- [syscl](https://github.com/syscl) for writing the fix for HD3000
