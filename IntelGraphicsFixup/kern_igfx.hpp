@@ -32,33 +32,31 @@ private:
 	 *  @param size    kinfo memory size
 	 */
 	void processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
-	
+
 	/**
 	 *  PAVP session command type
 	 */
 	using PAVPSessionCommandID_t = int32_t;
-	
+
 	/**
 	 *  PAVP session callback type
 	 */
 	using t_pavp_session_callback = uint32_t (*)(void *, PAVPSessionCommandID_t, uint32_t, uint32_t *, bool);
-		
-		
+
 	/**
 	 *  frameBufferInit type
 	 */
 	using t_frame_buffer_init = void (*)(void *);
-		
+
 	/**
 	 *  computeLaneCount type
 	 */
 	using t_compute_lane_count = bool (*)(void *, void *, unsigned int, int, int *);
-    
-    /**
-     *  AppleIntelXXXXGraphics::start callback type
-     */
-    using t_intel_graphics_start = bool (*) (IOService *that, IOService *);
-    
+
+	/**
+	 *  AppleIntelXXXXGraphics::start callback type
+	 */
+	using t_intel_graphics_start = bool (*) (IOService *that, IOService *);
 
 	/**
 	 *  Hooked methods / callbacks
@@ -66,7 +64,7 @@ private:
 	static uint32_t pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t passed_session_cmd, uint32_t a3, uint32_t *a4, bool passed_flag);
 	static void frameBufferInit(void *that);
 	static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
-    static bool intelGraphicsStart(IOService *that, IOService *provider);
+	static bool intelGraphicsStart(IOService *that, IOService *provider);
 
 	/**
 	 *  Trampolines for original method invocations
@@ -74,7 +72,8 @@ private:
 	t_pavp_session_callback orgPavpSessionCallback {nullptr};
 	t_frame_buffer_init orgFrameBufferInit {nullptr};
 	t_compute_lane_count orgComputeLaneCount {nullptr};
-		
+	t_intel_graphics_start orgGraphicsStart {nullptr};
+
 	/**
 	 *  External global variables
 	 */
@@ -112,11 +111,15 @@ private:
 		unsigned int   v_reserved[3];
 	};
 
-
 	/**
 	 *  vinfo presence status
 	 */
 	bool gotInfo {false};
+
+	/**
+	 *  connector-less frame
+	 */
+	bool connectorLessFrame {false};
 
 	/**
 	 *  Loaded vinfo
@@ -127,7 +130,7 @@ private:
 	 *  Console buffer backcopy
 	 */
 	uint8_t *consoleBuffer {nullptr};
-	
+
 	/**
 	 *  Current progress mask
 	 */
@@ -135,12 +138,17 @@ private:
 		enum {
 			NothingReady = 0,
 			CallbackPavpSessionRouted = 1,
-            CallbackPavpSessionHD3000Routed = 2,
+			CallbackPavpSessionHD3000Routed = 2,
 			CallbackPavpSessionHD4000Routed = 4,
 			CallbackFrameBufferInitRouted = 8,
 			CallbackComputeLaneCountRouted = 16,
-            CallbackVesaMode = 32,
-			EverythingDone = CallbackPavpSessionRouted | CallbackPavpSessionHD3000Routed | CallbackPavpSessionHD4000Routed | CallbackFrameBufferInitRouted | CallbackComputeLaneCountRouted | CallbackVesaMode,
+			CallbackDriverStartRouted = 32,
+			EverythingDone = CallbackPavpSessionRouted |
+				CallbackPavpSessionHD3000Routed |
+				CallbackPavpSessionHD4000Routed |
+				CallbackFrameBufferInitRouted |
+				CallbackComputeLaneCountRouted |
+				CallbackDriverStartRouted,
 		};
 	};
 	int progressState {ProcessingState::NothingReady};

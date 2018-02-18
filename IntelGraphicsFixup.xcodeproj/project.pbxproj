@@ -10,6 +10,11 @@
 		1C748C2D1C21952C0024EED2 /* kern_start.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1C748C2C1C21952C0024EED2 /* kern_start.cpp */; };
 		1C9CB7B01C789FF500231E41 /* kern_igfx.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1C9CB7AE1C789FF500231E41 /* kern_igfx.cpp */; };
 		1C9CB7B11C789FF500231E41 /* kern_igfx.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 1C9CB7AF1C789FF500231E41 /* kern_igfx.hpp */; };
+		CE22EA3A2038BE8A002A88A5 /* kern_model.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE22EA382038BE8A002A88A5 /* kern_model.cpp */; };
+		CE22EA3B2038BE8A002A88A5 /* kern_model.hpp in Headers */ = {isa = PBXBuildFile; fileRef = CE22EA392038BE8A002A88A5 /* kern_model.hpp */; };
+		CE22EA3D2039ECF1002A88A5 /* IntelFramebuffer.bt in Resources */ = {isa = PBXBuildFile; fileRef = CE22EA3C2039ECF1002A88A5 /* IntelFramebuffer.bt */; };
+		CE22EA402039F064002A88A5 /* kern_audio.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE22EA3E2039F063002A88A5 /* kern_audio.cpp */; };
+		CE22EA412039F064002A88A5 /* kern_audio.hpp in Headers */ = {isa = PBXBuildFile; fileRef = CE22EA3F2039F064002A88A5 /* kern_audio.hpp */; };
 		CE405EC91E49DD9700AA0B3D /* libkmod.a in Frameworks */ = {isa = PBXBuildFile; fileRef = CE405EC71E49DD7100AA0B3D /* libkmod.a */; };
 		CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE405ED81E4A080700AA0B3D /* plugin_start.cpp */; };
 /* End PBXBuildFile section */
@@ -35,6 +40,11 @@
 		1CF01C901C8CF97F002DCEA3 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		1CF01C921C8CF997002DCEA3 /* Changelog.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Changelog.md; sourceTree = "<group>"; };
 		1CF01C931C8DF02E002DCEA3 /* LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE.txt; sourceTree = "<group>"; };
+		CE22EA382038BE8A002A88A5 /* kern_model.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = kern_model.cpp; sourceTree = "<group>"; };
+		CE22EA392038BE8A002A88A5 /* kern_model.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_model.hpp; sourceTree = "<group>"; };
+		CE22EA3C2039ECF1002A88A5 /* IntelFramebuffer.bt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = IntelFramebuffer.bt; sourceTree = "<group>"; };
+		CE22EA3E2039F063002A88A5 /* kern_audio.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kern_audio.cpp; sourceTree = "<group>"; };
+		CE22EA3F2039F064002A88A5 /* kern_audio.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = kern_audio.hpp; sourceTree = "<group>"; };
 		CE405EBA1E49DD7100AA0B3D /* kern_compression.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_compression.hpp; sourceTree = "<group>"; };
 		CE405EBB1E49DD7100AA0B3D /* kern_disasm.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_disasm.hpp; sourceTree = "<group>"; };
 		CE405EBC1E49DD7100AA0B3D /* kern_file.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_file.hpp; sourceTree = "<group>"; };
@@ -86,8 +96,12 @@
 			isa = PBXGroup;
 			children = (
 				1C748C2C1C21952C0024EED2 /* kern_start.cpp */,
-				1C9CB7AF1C789FF500231E41 /* kern_igfx.hpp */,
+				CE22EA3E2039F063002A88A5 /* kern_audio.cpp */,
+				CE22EA3F2039F064002A88A5 /* kern_audio.hpp */,
 				1C9CB7AE1C789FF500231E41 /* kern_igfx.cpp */,
+				1C9CB7AF1C789FF500231E41 /* kern_igfx.hpp */,
+				CE22EA382038BE8A002A88A5 /* kern_model.cpp */,
+				CE22EA392038BE8A002A88A5 /* kern_model.hpp */,
 				1C748C2E1C21952C0024EED2 /* Info.plist */,
 			);
 			path = IntelGraphicsFixup;
@@ -96,6 +110,7 @@
 		1CF01C911C8CF982002DCEA3 /* Docs */ = {
 			isa = PBXGroup;
 			children = (
+				CE22EA3C2039ECF1002A88A5 /* IntelFramebuffer.bt */,
 				1CF01C901C8CF97F002DCEA3 /* README.md */,
 				1CF01C931C8DF02E002DCEA3 /* LICENSE.txt */,
 				1CF01C921C8CF997002DCEA3 /* Changelog.md */,
@@ -150,6 +165,8 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CE22EA3B2038BE8A002A88A5 /* kern_model.hpp in Headers */,
+				CE22EA412039F064002A88A5 /* kern_audio.hpp in Headers */,
 				1C9CB7B11C789FF500231E41 /* kern_igfx.hpp in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -212,6 +229,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CE22EA3D2039ECF1002A88A5 /* IntelFramebuffer.bt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -223,8 +241,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				1C9CB7B01C789FF500231E41 /* kern_igfx.cpp in Sources */,
+				CE22EA402039F064002A88A5 /* kern_audio.cpp in Sources */,
 				CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */,
 				1C748C2D1C21952C0024EED2 /* kern_start.cpp in Sources */,
+				CE22EA3A2038BE8A002A88A5 /* kern_model.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -340,7 +360,7 @@
 				MODULE_NAME = as.lvs1974.IntelGraphicsFixup;
 				MODULE_START = "$(PRODUCT_NAME)_kern_start";
 				MODULE_STOP = "$(PRODUCT_NAME)_kern_stop";
-				MODULE_VERSION = 1.2.4;
+				MODULE_VERSION = 1.2.5;
 				OTHER_CFLAGS = (
 					"-mmmx",
 					"-msse",
@@ -384,7 +404,7 @@
 				MODULE_NAME = as.lvs1974.IntelGraphicsFixup;
 				MODULE_START = "$(PRODUCT_NAME)_kern_start";
 				MODULE_STOP = "$(PRODUCT_NAME)_kern_stop";
-				MODULE_VERSION = 1.2.4;
+				MODULE_VERSION = 1.2.5;
 				OTHER_CFLAGS = (
 					"-mmmx",
 					"-msse",

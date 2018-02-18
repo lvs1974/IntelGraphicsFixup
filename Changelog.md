@@ -3,7 +3,6 @@ IntelGraphicsFixup Changelog
 #### v1.0.0
 - Initial release
 
-
 #### v1.0.1
 - Updated readme, features
 - Patch IOGraphicsFamily if it's already loaded
@@ -47,3 +46,12 @@ IntelGraphicsFixup Changelog
 
 #### v1.2.4
 - Fix for HD3000 added (credits to syscl)
+
+#### v1.2.5
+- Add basic automatic IGPU model detection (for now only the GPUs present in Apple kexts, use `no-model` to avoid)
+- Add basic digital audio correction on Haswell (HDAU rename and `layout-id` upgrade)
+- Add GFX0 -> IGPU automatic rename
+- Add basic automatic AAPL,ig-platform-id injection (for the default values for SKL/KBL GPUs)
+- Add GuC microcode loading on SKL/KBL (do not forget to remove `-disablegfxfirmware` boot-arg)
+- Add MEI/HECI -> IMEI automatic rename
+- Fix compatibility with connector-less frames
