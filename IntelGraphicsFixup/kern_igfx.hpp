@@ -9,6 +9,7 @@
 #define kern_igfx_hpp
 
 #include <Headers/kern_patcher.hpp>
+#include <Headers/kern_cpu.hpp>
 
 class IGFX {
 public:
@@ -56,7 +57,22 @@ private:
 	/**
 	 *  AppleIntelXXXXGraphics::start callback type
 	 */
-	using t_intel_graphics_start = bool (*) (IOService *that, IOService *);
+	using t_intel_graphics_start = bool (*)(IOService *that, IOService *);
+
+	/**
+	 *  IGHardwareGuC::loadGuCBinary callback type
+	 */
+	using t_load_guc_binary = bool (*)(void *that);
+
+	/**
+	 *  IGSharedMappedBuffer::withOptions callback type
+	 */
+	using t_ig_buffer_with_options = void *(*)(void *accelTask, unsigned long size, unsigned int type, unsigned int flags);
+
+	/**
+	 *  IGSharedMappedBuffer::getGPUVirtualAddress callback type
+	 */
+	using t_ig_get_gpu_vaddr = void *(*)(void *that);
 
 	/**
 	 *  Hooked methods / callbacks
@@ -65,6 +81,9 @@ private:
 	static void frameBufferInit(void *that);
 	static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
 	static bool intelGraphicsStart(IOService *that, IOService *provider);
+	static bool loadGuCBinary(void *that);
+	static void *igBufferWithOptions(void *accelTask, unsigned long size, unsigned int type, unsigned int flags);
+	static void *igBufferGetGpuVirtualAddress(void *that);
 
 	/**
 	 *  Trampolines for original method invocations
@@ -73,11 +92,15 @@ private:
 	t_frame_buffer_init orgFrameBufferInit {nullptr};
 	t_compute_lane_count orgComputeLaneCount {nullptr};
 	t_intel_graphics_start orgGraphicsStart {nullptr};
+	t_load_guc_binary orgLoadGuCBinary {nullptr};
+	t_ig_buffer_with_options orgIgBufferWithOptions {nullptr};
+	t_ig_get_gpu_vaddr orgIgGetGpuVirtualAddress {nullptr};
 
 	/**
 	 *  External global variables
 	 */
 	uint8_t *gIOFBVerboseBootPtr {nullptr};
+	uint8_t *gKmGen9GuCBinary {nullptr};
 
 	enum FramebufferFixMode {
 		FBDEFAULT  = 0,
@@ -89,6 +112,11 @@ private:
 	 *  Framebuffer distortion fix mode
 	 */
 	uint32_t resetFramebuffer {FBDEFAULT};
+
+	/**
+	 *  CPU generation
+	 */
+	CPUInfo::CpuGeneration cpuGeneration {CPUInfo::CpuGeneration::Unknown};
 
 	/**
 	 *  Console info structure, taken from osfmk/console/video_console.h
@@ -132,6 +160,26 @@ private:
 	uint8_t *consoleBuffer {nullptr};
 
 	/**
+	 *  We are currently trying to load the firmware
+	 */
+	bool performingFirmwareLoad {false};
+
+	/**
+	 *  Dummy firmware buffer to store unused old firmware in
+	 */
+	uint8_t *dummyFirmwareBuffer {nullptr};
+
+	/**
+	 *  Actual firmware buffer we store our new firmware in
+	 */
+	uint8_t *realFirmwareBuffer {nullptr};
+
+	/**
+	 *  Pointer to the size assignment
+	 */
+	uint32_t *firmwareSizePointer {nullptr};
+
+	/**
 	 *  Current progress mask
 	 */
 	struct ProcessingState {
@@ -143,12 +191,14 @@ private:
 			CallbackFrameBufferInitRouted = 8,
 			CallbackComputeLaneCountRouted = 16,
 			CallbackDriverStartRouted = 32,
+			CallbackGuCFirmwareUpdateRouted = 64,
 			EverythingDone = CallbackPavpSessionRouted |
 				CallbackPavpSessionHD3000Routed |
 				CallbackPavpSessionHD4000Routed |
 				CallbackFrameBufferInitRouted |
 				CallbackComputeLaneCountRouted |
-				CallbackDriverStartRouted,
+				CallbackDriverStartRouted |
+				CallbackGuCFirmwareUpdateRouted,
 		};
 	};
 	int progressState {ProcessingState::NothingReady};

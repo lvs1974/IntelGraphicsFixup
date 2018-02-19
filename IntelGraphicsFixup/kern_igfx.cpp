@@ -15,6 +15,7 @@
 #undef protected
 
 #include "kern_igfx.hpp"
+#include "kern_guc.hpp"
 #include "kern_model.hpp"
 
 // Only used in apple-driven callbacks
@@ -56,6 +57,13 @@ static size_t kextListSize = arrsize(kextList);
 
 bool IGFX::init() {
 	PE_parse_boot_argn("igfxrst", &resetFramebuffer, sizeof(resetFramebuffer));
+
+	// Allow GuC firmware patches to be disabled
+	int tmp;
+	if (PE_parse_boot_argn("-disablegfxfirmware", &tmp, sizeof(tmp))) {
+		SYSLOG("igfx", "-disablegfxfirmware flag may negatively affect IGPU performance! Remove it!");
+		progressState |= ProcessingState::CallbackGuCFirmwareUpdateRouted;
+	}
 
 	auto error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher) {
 		static_cast<IGFX *>(user)->processKernel(patcher);
@@ -192,26 +200,6 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 		return false;
 	}
 
-	uint32_t device = 0;
-	if (!provider->getProperty("no-model") && WIOKit::getOSDataValue(provider, "device-id", device)) {
-		auto model = getModelName(device);
-		DBGLOG("igfx", "autodetect model name for IGPU %X gave %s", device, model ? model : "(null)");
-		if (model)
-			provider->setProperty("model", model);
-	}
-
-	uint32_t platform = 0;
-	if (WIOKit::getOSDataValue(provider, "AAPL,ig-platform-id", platform)) {
-		callbackIgfx->connectorLessFrame = CPUInfo::isConnectorLessPlatformId(platform);
-	} else {
-		// Setting a default platform id instead of letting it to be fallen back to appears to improve boot speed for whatever reason.
-		auto gen = CPUInfo::getGeneration();
-		if (gen == CPUInfo::CpuGeneration::Skylake)
-			provider->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::DefaultSkylakePlatformId, sizeof(uint32_t)));
-		else if (gen == CPUInfo::CpuGeneration::KabyLake)
-			provider->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::DefaultKabyLakePlatformId, sizeof(uint32_t)));
-	}
-
 	// By default Apple drivers load Apple-specific firmware, which is incompatible.
 	// On KBL they do it unconditionally, which causes infinite loop.
 	// There is an option to load a generic firmware, which we set here.
@@ -220,11 +208,6 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 		auto newDev = OSDynamicCast(OSDictionary, dev->copyCollection());
 		if (newDev) {
 			DBGLOG("igfx", "forcing to use normal GuC firmware");
-
-			int tmp;
-			if (PE_parse_boot_argn("-disablegfxfirmware", &tmp, sizeof(tmp)))
-				SYSLOG("igfx", "-disablegfxfirmware flag may negatively affect IGPU performance! Remove it!");
-
 			newDev->setObject("GraphicsSchedulerSelect", OSNumber::withNumber(4, 32));
 			that->setProperty("Development", newDev);
 		}
@@ -233,7 +216,89 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 	return callbackIgfx->orgGraphicsStart(that, provider);
 }
 
+bool IGFX::loadGuCBinary(void *that) {
+	bool r = false;
+	if (callbackIgfx) {
+		DBGLOG("igfx", "attempting to load firmware for cpu gen %d", callbackIgfx->cpuGeneration);
+
+		if (callbackIgfx->firmwareSizePointer)
+			callbackIgfx->performingFirmwareLoad = true;
+		r = callbackIgfx->orgLoadGuCBinary(that);
+		callbackIgfx->performingFirmwareLoad = false;
+	}
+	return r;
+}
+
+void *IGFX::igBufferWithOptions(void *accelTask, unsigned long size, unsigned int type, unsigned int flags) {
+	void *r = nullptr;
+	if (callbackIgfx) {
+		if (callbackIgfx->performingFirmwareLoad) {
+			// Allocate a dummy buffer
+			callbackIgfx->dummyFirmwareBuffer = Buffer::create<uint8_t>(size);
+			// Select the latest firmware to upload
+			DBGLOG("igfx", "preparing firmware for cpu gen %d", callbackIgfx->cpuGeneration);
+			const void *fw = GuCFirmwareKBL;
+			const void *fwsig = GuCFirmwareKBLSignature;
+			size_t fwsize = GuCFirmwareKBLSize;
+			if (callbackIgfx->cpuGeneration == CPUInfo::CpuGeneration::Skylake) {
+				fw = GuCFirmwareSKL;
+				fwsig = GuCFirmwareSKLSignature;
+				fwsize = GuCFirmwareSKLSize;
+			}
+			// Allocate enough memory for the new firmware (should be 64K-aligned)
+			unsigned long newsize = fwsize > size ? ((fwsize + 0xFFFF) & (~0xFFFF)) : size;
+			r = callbackIgfx->orgIgBufferWithOptions(accelTask, newsize, type, flags);
+			// Replace the real buffer with a dummy buffer
+			if (r && callbackIgfx->dummyFirmwareBuffer) {
+				// Copy firmware contents, update the sizes and signature
+				auto status = MachInfo::setKernelWriting(true, KernelPatcher::kernelWriteLock);
+				if (status == KERN_SUCCESS) {
+					// Upload the firmware ourselves
+					callbackIgfx->realFirmwareBuffer = static_cast<uint8_t **>(r)[7];
+					static_cast<uint8_t **>(r)[7] = callbackIgfx->dummyFirmwareBuffer;
+					lilu_os_memcpy(callbackIgfx->realFirmwareBuffer, fw, fwsize);
+					// Firmware follows the signature
+					auto sig = callbackIgfx->gKmGen9GuCBinary + *callbackIgfx->firmwareSizePointer;
+					lilu_os_memcpy(sig, fwsig, GuCFirmwareSignatureSize);
+					// Update the firmware size
+					*callbackIgfx->firmwareSizePointer = static_cast<uint32_t>(fwsize);
+					MachInfo::setKernelWriting(false, KernelPatcher::kernelWriteLock);
+				} else {
+					SYSLOG("igfx", "ig buffer protection upgrade failure %d", status);
+				}
+			} else if (callbackIgfx->dummyFirmwareBuffer) {
+				SYSLOG("igfx", "ig shared buffer allocation failure");
+				Buffer::deleter(callbackIgfx->dummyFirmwareBuffer);
+				callbackIgfx->dummyFirmwareBuffer = nullptr;
+			} else {
+				SYSLOG("igfx", "dummy buffer allocation failure");
+			}
+		} else {
+			r = callbackIgfx->orgIgBufferWithOptions(accelTask, size, type, flags);
+		}
+	}
+	return r;
+}
+
+void *IGFX::igBufferGetGpuVirtualAddress(void *that) {
+	void *r = nullptr;
+	if (callbackIgfx) {
+		if (callbackIgfx->performingFirmwareLoad && callbackIgfx->realFirmwareBuffer) {
+			// Restore the original framebuffer
+			static_cast<uint8_t **>(that)[7] = callbackIgfx->realFirmwareBuffer;
+			callbackIgfx->realFirmwareBuffer = nullptr;
+			// Free the dummy framebuffer which is no longer used
+			Buffer::deleter(callbackIgfx->dummyFirmwareBuffer);
+			callbackIgfx->dummyFirmwareBuffer = nullptr;
+		}
+		r = callbackIgfx->orgIgGetGpuVirtualAddress(that);
+	}
+	return r;
+}
+
 void IGFX::processKernel(KernelPatcher &patcher) {
+	cpuGeneration = CPUInfo::getGeneration();
+
 	// We need to load vinfo in all cases but reset
 	if (resetFramebuffer != FBRESET) {
 		auto info = reinterpret_cast<vc_info *>(patcher.solveSymbol(KernelPatcher::KernelID, "_vinfo"));
@@ -248,7 +313,6 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 			SYSLOG("igfx", "failed to obtain vcinfo");
 		}
 
-
 		// Ignore all the errors for other processors
 		patcher.clearError();
 	}
@@ -256,21 +320,7 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 	auto sect = WIOKit::findEntryByPrefix("/AppleACPIPlatformExpert", "PCI", gIOServicePlane);
 	if (sect) sect = WIOKit::findEntryByPrefix(sect, "AppleACPIPCI", gIOServicePlane);
 	if (sect) {
-		bool foundIMEI = false;
-		auto imei = WIOKit::findEntryByPrefix(sect, "IMEI", gIOServicePlane);
-		// We should name IMEI correctly for complete hw acceleration functionality.
-		if (!imei) {
-			imei = WIOKit::findEntryByPrefix(sect, "HECI", gIOServicePlane);
-			if (!imei) imei = WIOKit::findEntryByPrefix(sect, "MEI", gIOServicePlane);
-			if (imei) {
-				WIOKit::renameDevice(imei, "IMEI");
-				foundIMEI = true;
-			}
-		} else {
-			foundIMEI = true;
-		}
-
-		bool foundIGPU = false;
+		bool foundIMEI = false, foundIGPU = false;
 		auto iterator = sect->getChildIterator(gIOServicePlane);
 		if (iterator) {
 			IORegistryEntry *obj = nullptr;
@@ -278,20 +328,44 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 				uint32_t vendor = 0, code = 0;
 				if (WIOKit::getOSDataValue(obj, "vendor-id", vendor) && vendor == 0x8086 &&
 					WIOKit::getOSDataValue(obj, "class-code", code)) {
+					const char *name = obj->getName();
 					if (!foundIGPU && (code == 0x38000 || code == 0x30000)) {
-						const char *name = obj->getName();
 						DBGLOG("igfx", "found Intel GPU device %s", name);
 						if (!name || strcmp(name, "IGPU"))
 							WIOKit::renameDevice(obj, "IGPU");
-						foundIGPU = true;
-					} else if (!foundIMEI && code == 0x78000) {
-						// Sometimes IMEI is entirely unnamed!
-						const char *name = obj->getName(); (void)name;
-						DBGLOG("igfx", "found unnamed Intel ME device %s", name ? name : "(null)");
-						WIOKit::renameDevice(obj, "IMEI");
-						foundIMEI = true;
-					}
 
+						uint32_t device = 0;
+						if (!obj->getProperty("model") && WIOKit::getOSDataValue(obj, "device-id", device)) {
+							auto model = getModelName(device);
+							DBGLOG("igfx", "autodetect model name for IGPU %X gave %s", device, model ? model : "(null)");
+							if (model)
+								obj->setProperty("model", model);
+						}
+
+						uint32_t platform = 0;
+						if (WIOKit::getOSDataValue(obj, "AAPL,ig-platform-id", platform)) {
+							connectorLessFrame = CPUInfo::isConnectorLessPlatformId(platform);
+						} else {
+							// Setting a default platform id instead of letting it to be fallen back to appears to improve boot speed for whatever reason.
+							if (cpuGeneration == CPUInfo::CpuGeneration::Skylake)
+								obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::DefaultSkylakePlatformId, sizeof(uint32_t)));
+							else if (cpuGeneration == CPUInfo::CpuGeneration::KabyLake)
+								obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::DefaultKabyLakePlatformId, sizeof(uint32_t)));
+						}
+
+						foundIGPU = true;
+					} else if (!foundIMEI) {
+						bool correctName = name && !strcmp(name, "IMEI");
+						if (correctName) {
+							// IMEI is just right
+							foundIMEI = true;
+						} else if (!correctName && (code == 0x78000 || !strcmp(name, "HECI") || !strcmp(name, "MEI"))) {
+							// IMEI is improperly named or unnamed!
+							DBGLOG("igfx", "found invalid Intel ME device %s", name ? name : "(null)");
+							WIOKit::renameDevice(obj, "IMEI");
+							foundIMEI = true;
+						}
+					}
 				}
 				if (foundIMEI && foundIGPU)
 					break;
@@ -418,6 +492,75 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 						}
 					} else {
 						SYSLOG("igfx", "failed to resolve IntelAccelerator::start");
+					}
+				}
+
+				if (!(progressState & ProcessingState::CallbackGuCFirmwareUpdateRouted) && (i == KextSKLGraphics || i == KextKBLGraphics)) {
+					gKmGen9GuCBinary = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL17__KmGen9GuCBinary"));
+					if (gKmGen9GuCBinary) {
+						auto loadGuC = patcher.solveSymbol(index, "__ZN13IGHardwareGuC13loadGuCBinaryEv");
+						if (loadGuC) {
+							DBGLOG("igfx", "obtained __ZN13IGHardwareGuC13loadGuCBinaryEv");
+							patcher.clearError();
+
+							// Lookup the assignment to the size register.
+							uint8_t sizeReg[] {0x10, 0xC3, 0x00, 0x00};
+							auto pos    = reinterpret_cast<uint8_t *>(loadGuC);
+							auto endPos = pos + PAGE_SIZE;
+							while (memcmp(pos, sizeReg, sizeof(sizeReg)) && pos < endPos)
+								pos++;
+
+							// Verify and store the size pointer
+							if (pos != endPos) {
+								pos += sizeof(uint32_t);
+								firmwareSizePointer = reinterpret_cast<uint32_t *>(pos);
+								DBGLOG("igfx", "discovered firmware size: %d bytes", *firmwareSizePointer);
+								// Firmware size must not be bigger than 1 MB
+								if ((*firmwareSizePointer & 0xFFFFF) != *firmwareSizePointer)
+									firmwareSizePointer = nullptr;
+							}
+
+							orgLoadGuCBinary = reinterpret_cast<t_load_guc_binary>(patcher.routeFunction(loadGuC, reinterpret_cast<mach_vm_address_t>(loadGuCBinary), true));
+							if (patcher.getError() == KernelPatcher::Error::NoError) {
+								DBGLOG("igfx", "routed __ZN13IGHardwareGuC13loadGuCBinaryEv");
+							} else {
+								SYSLOG("igfx", "failed to route __ZN13IGHardwareGuC13loadGuCBinaryEv");
+							}
+						} else {
+							SYSLOG("igfx", "failed to resolve __ZN13IGHardwareGuC13loadGuCBinaryEv");
+						}
+
+						auto bufferWithOptions = patcher.solveSymbol(index, "__ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+						if (bufferWithOptions) {
+							DBGLOG("igfx", "obtained __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+							patcher.clearError();
+							orgIgBufferWithOptions = reinterpret_cast<t_ig_buffer_with_options>(patcher.routeFunction(bufferWithOptions, reinterpret_cast<mach_vm_address_t>(igBufferWithOptions), true));
+							if (patcher.getError() == KernelPatcher::Error::NoError) {
+								DBGLOG("igfx", "routed __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+							} else {
+								SYSLOG("igfx", "failed to route __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+							}
+						} else {
+							SYSLOG("igfx", "failed to resolve __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+						}
+
+						auto getGpuVaddr = patcher.solveSymbol(index, "__ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+						if (getGpuVaddr) {
+							DBGLOG("igfx", "obtained __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+							patcher.clearError();
+							orgIgGetGpuVirtualAddress = reinterpret_cast<t_ig_get_gpu_vaddr>(patcher.routeFunction(getGpuVaddr, reinterpret_cast<mach_vm_address_t>(igBufferGetGpuVirtualAddress), true));
+							if (patcher.getError() == KernelPatcher::Error::NoError) {
+								DBGLOG("igfx", "routed __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+							} else {
+								SYSLOG("igfx", "failed to route __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+							}
+						} else {
+							SYSLOG("igfx", "failed to resolve __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+						}
+
+						progressState |= ProcessingState::CallbackGuCFirmwareUpdateRouted;
+					} else {
+						SYSLOG("igfx", "failed to resoolve __ZL17__KmGen9GuCBinary");
 					}
 				}
 			}
