@@ -48,10 +48,11 @@ IntelGraphicsFixup Changelog
 - Fix for HD3000 added (credits to syscl)
 
 #### v1.2.5
-- Add basic automatic IGPU model detection (for now only the GPUs present in Apple kexts, use `no-model` to avoid)
+- Add basic automatic IGPU model detection if it is not set (for now only the GPUs present in Apple kexts)
 - Add basic digital audio correction on Haswell (HDAU rename and `layout-id` upgrade)
 - Add GFX0 -> IGPU automatic rename
 - Add basic automatic AAPL,ig-platform-id injection (for the default values for SKL/KBL GPUs)
 - Add GuC microcode loading on SKL/KBL (do not forget to remove `-disablegfxfirmware` boot-arg)
+- Add latest GuC microcode for SKL (9.33) and KBL (9.39) from Linux
 - Add MEI/HECI -> IMEI automatic rename
 - Fix compatibility with connector-less frames

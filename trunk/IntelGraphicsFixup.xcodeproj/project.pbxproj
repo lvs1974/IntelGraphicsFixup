@@ -17,6 +17,7 @@
 		CE22EA412039F064002A88A5 /* kern_audio.hpp in Headers */ = {isa = PBXBuildFile; fileRef = CE22EA3F2039F064002A88A5 /* kern_audio.hpp */; };
 		CE405EC91E49DD9700AA0B3D /* libkmod.a in Frameworks */ = {isa = PBXBuildFile; fileRef = CE405EC71E49DD7100AA0B3D /* libkmod.a */; };
 		CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE405ED81E4A080700AA0B3D /* plugin_start.cpp */; };
+		CE6A853D203AB2D200B8FFFA /* kern_guc.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -60,6 +61,8 @@
 		CE405ED21E49F9FC00AA0B3D /* kern_api.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_api.hpp; sourceTree = "<group>"; };
 		CE405ED81E4A080700AA0B3D /* plugin_start.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = plugin_start.cpp; sourceTree = "<group>"; };
 		CE405EDA1E4A080F00AA0B3D /* plugin_start.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = plugin_start.hpp; sourceTree = "<group>"; };
+		CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kern_guc.cpp; sourceTree = "<group>"; };
+		CE6A853E203AB2ED00B8FFFA /* kern_guc.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_guc.hpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +101,8 @@
 				1C748C2C1C21952C0024EED2 /* kern_start.cpp */,
 				CE22EA3E2039F063002A88A5 /* kern_audio.cpp */,
 				CE22EA3F2039F064002A88A5 /* kern_audio.hpp */,
+				CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */,
+				CE6A853E203AB2ED00B8FFFA /* kern_guc.hpp */,
 				1C9CB7AE1C789FF500231E41 /* kern_igfx.cpp */,
 				1C9CB7AF1C789FF500231E41 /* kern_igfx.hpp */,
 				CE22EA382038BE8A002A88A5 /* kern_model.cpp */,
@@ -243,6 +248,7 @@
 				1C9CB7B01C789FF500231E41 /* kern_igfx.cpp in Sources */,
 				CE22EA402039F064002A88A5 /* kern_audio.cpp in Sources */,
 				CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */,
+				CE6A853D203AB2D200B8FFFA /* kern_guc.cpp in Sources */,
 				1C748C2D1C21952C0024EED2 /* kern_start.cpp in Sources */,
 				CE22EA3A2038BE8A002A88A5 /* kern_model.cpp in Sources */,
 			);
