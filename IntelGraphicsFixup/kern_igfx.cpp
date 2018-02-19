@@ -192,12 +192,6 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 		return false;
 	}
 
-	const char *orgName = provider->getName();
-	if (!orgName || strcmp(orgName, "IGPU")) {
-		DBGLOG("igfx", "fixing device name from %s to IGPU", orgName ? orgName : "(null)");
-		WIOKit::renameDevice(provider, "IGPU");
-	}
-
 	uint32_t device = 0;
 	if (!provider->getProperty("no-model") && WIOKit::getOSDataValue(provider, "device-id", device)) {
 		auto model = getModelName(device);
@@ -262,12 +256,47 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 	auto sect = WIOKit::findEntryByPrefix("/AppleACPIPlatformExpert", "PCI", gIOServicePlane);
 	if (sect) sect = WIOKit::findEntryByPrefix(sect, "AppleACPIPCI", gIOServicePlane);
 	if (sect) {
+		bool foundIMEI = false;
 		auto imei = WIOKit::findEntryByPrefix(sect, "IMEI", gIOServicePlane);
 		// We should name IMEI correctly for complete hw acceleration functionality.
 		if (!imei) {
 			imei = WIOKit::findEntryByPrefix(sect, "HECI", gIOServicePlane);
 			if (!imei) imei = WIOKit::findEntryByPrefix(sect, "MEI", gIOServicePlane);
-			if (imei) imei->setName("IMEI");
+			if (imei) {
+				WIOKit::renameDevice(imei, "IMEI");
+				foundIMEI = true;
+			}
+		} else {
+			foundIMEI = true;
+		}
+
+		bool foundIGPU = false;
+		auto iterator = sect->getChildIterator(gIOServicePlane);
+		if (iterator) {
+			IORegistryEntry *obj = nullptr;
+			while ((obj = OSDynamicCast(IORegistryEntry, iterator->getNextObject())) != nullptr) {
+				uint32_t vendor = 0, code = 0;
+				if (WIOKit::getOSDataValue(obj, "vendor-id", vendor) && vendor == 0x8086 &&
+					WIOKit::getOSDataValue(obj, "class-code", code)) {
+					if (!foundIGPU && (code == 0x38000 || code == 0x30000)) {
+						const char *name = obj->getName();
+						DBGLOG("igfx", "found Intel GPU device %s", name);
+						if (!name || strcmp(name, "IGPU"))
+							WIOKit::renameDevice(obj, "IGPU");
+						foundIGPU = true;
+					} else if (!foundIMEI && code == 0x78000) {
+						// Sometimes IMEI is entirely unnamed!
+						const char *name = obj->getName(); (void)name;
+						DBGLOG("igfx", "found unnamed Intel ME device %s", name ? name : "(null)");
+						WIOKit::renameDevice(obj, "IMEI");
+						foundIMEI = true;
+					}
+
+				}
+				if (foundIMEI && foundIGPU)
+					break;
+			}
+			iterator->release();
 		}
 	}
 }
