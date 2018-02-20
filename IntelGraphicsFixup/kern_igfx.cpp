@@ -351,7 +351,7 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 							auto model = getModelName(device);
 							DBGLOG("igfx", "autodetect model name for IGPU %X gave %s", device, model ? model : "(null)");
 							if (model)
-								obj->setProperty("model", model);
+								obj->setProperty("model", const_cast<char *>(model), static_cast<unsigned>(strlen(model)+1));
 						}
 
 						uint32_t platform = 0;
