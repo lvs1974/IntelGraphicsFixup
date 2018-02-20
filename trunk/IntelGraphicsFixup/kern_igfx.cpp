@@ -229,6 +229,20 @@ bool IGFX::loadGuCBinary(void *that) {
 	return r;
 }
 
+bool IGFX::initSchedControl(void *that) {
+	bool r = false;
+	if (callbackIgfx) {
+		// This function is caled within loadGuCBinary, and it also uses shared buffers.
+		// To avoid any issues here we ensure that the filtering is off.
+		DBGLOG("igfx", "attempting to init sched control with load %d", callbackIgfx->performingFirmwareLoad);
+		bool perfLoad = callbackIgfx->performingFirmwareLoad;
+		callbackIgfx->performingFirmwareLoad = false;
+		r = callbackIgfx->orgInitSchedControl(that);
+		callbackIgfx->performingFirmwareLoad = perfLoad;
+	}
+	return r;
+}
+
 void *IGFX::igBufferWithOptions(void *accelTask, unsigned long size, unsigned int type, unsigned int flags) {
 	void *r = nullptr;
 	if (callbackIgfx) {
@@ -257,9 +271,7 @@ void *IGFX::igBufferWithOptions(void *accelTask, unsigned long size, unsigned in
 					callbackIgfx->realFirmwareBuffer = static_cast<uint8_t **>(r)[7];
 					static_cast<uint8_t **>(r)[7] = callbackIgfx->dummyFirmwareBuffer;
 					lilu_os_memcpy(callbackIgfx->realFirmwareBuffer, fw, fwsize);
-					// Firmware follows the signature
-					auto sig = callbackIgfx->gKmGen9GuCBinary + *callbackIgfx->firmwareSizePointer;
-					lilu_os_memcpy(sig, fwsig, GuCFirmwareSignatureSize);
+					lilu_os_memcpy(callbackIgfx->signaturePointer, fwsig, GuCFirmwareSignatureSize);
 					// Update the firmware size
 					*callbackIgfx->firmwareSizePointer = static_cast<uint32_t>(fwsize);
 					MachInfo::setKernelWriting(false, KernelPatcher::kernelWriteLock);
@@ -516,8 +528,12 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 								firmwareSizePointer = reinterpret_cast<uint32_t *>(pos);
 								DBGLOG("igfx", "discovered firmware size: %d bytes", *firmwareSizePointer);
 								// Firmware size must not be bigger than 1 MB
-								if ((*firmwareSizePointer & 0xFFFFF) != *firmwareSizePointer)
+								if ((*firmwareSizePointer & 0xFFFFF) == *firmwareSizePointer) {
+									// Firmware follows the signature
+									signaturePointer = gKmGen9GuCBinary + *firmwareSizePointer;
+								} else {
 									firmwareSizePointer = nullptr;
+								}
 							}
 
 							orgLoadGuCBinary = reinterpret_cast<t_load_guc_binary>(patcher.routeFunction(loadGuC, reinterpret_cast<mach_vm_address_t>(loadGuCBinary), true));
@@ -528,6 +544,20 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 							}
 						} else {
 							SYSLOG("igfx", "failed to resolve __ZN13IGHardwareGuC13loadGuCBinaryEv");
+						}
+
+						auto initSched = patcher.solveSymbol(index, "__ZN13IGHardwareGuC16initSchedControlEv");
+						if (initSched) {
+							DBGLOG("igfx", "obtained __ZN13IGHardwareGuC16initSchedControlEv");
+							patcher.clearError();
+							orgInitSchedControl = reinterpret_cast<t_init_sched_control>(patcher.routeFunction(initSched, reinterpret_cast<mach_vm_address_t>(initSchedControl), true));
+							if (patcher.getError() == KernelPatcher::Error::NoError) {
+								DBGLOG("igfx", "routed __ZN13IGHardwareGuC16initSchedControlEv");
+							} else {
+								SYSLOG("igfx", "failed to route __ZN13IGHardwareGuC16initSchedControlEv");
+							}
+						} else {
+							SYSLOG("igfx", "failed to resolve __ZN13IGHardwareGuC16initSchedControlEv");
 						}
 
 						auto bufferWithOptions = patcher.solveSymbol(index, "__ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
