@@ -65,6 +65,11 @@ private:
 	using t_load_guc_binary = bool (*)(void *that);
 
 	/**
+	 *  IGScheduler4::loadFirmware callback type
+	 */
+	using t_load_firmware = bool (*)(void *that);
+
+	/**
 	 *  IGHardwareGuC::initSchedControl callback type
 	 */
 	using t_init_sched_control = bool (*)(void *that);
@@ -87,6 +92,9 @@ private:
 	static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
 	static bool intelGraphicsStart(IOService *that, IOService *provider);
 	static bool loadGuCBinary(void *that);
+	static bool loadFirmware(IOService *that);
+	static void systemWillSleep(IOService *that);
+	static void systemDidWake(IOService *that);
 	static bool initSchedControl(void *that);
 	static void *igBufferWithOptions(void *accelTask, unsigned long size, unsigned int type, unsigned int flags);
 	static void *igBufferGetGpuVirtualAddress(void *that);
@@ -99,6 +107,7 @@ private:
 	t_compute_lane_count orgComputeLaneCount {nullptr};
 	t_intel_graphics_start orgGraphicsStart {nullptr};
 	t_load_guc_binary orgLoadGuCBinary {nullptr};
+	t_load_firmware orgLoadFirmware {nullptr};
 	t_init_sched_control orgInitSchedControl {nullptr};
 	t_ig_buffer_with_options orgIgBufferWithOptions {nullptr};
 	t_ig_get_gpu_vaddr orgIgGetGpuVirtualAddress {nullptr};
@@ -119,6 +128,11 @@ private:
 	 *  Framebuffer distortion fix mode
 	 */
 	uint32_t resetFramebuffer {FBDEFAULT};
+
+	/**
+	 *  Framebuffer firmware loading mode, enable by default
+	 */
+	int32_t decideLoadFirmware {1};
 
 	/**
 	 *  CPU generation

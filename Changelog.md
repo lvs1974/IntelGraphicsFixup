@@ -52,7 +52,8 @@ IntelGraphicsFixup Changelog
 - Add basic digital audio correction on Haswell (HDAU rename and `layout-id` upgrade)
 - Add GFX0 -> IGPU automatic rename
 - Add basic automatic AAPL,ig-platform-id injection (for the default values for SKL/KBL GPUs)
-- Add GuC microcode loading on SKL/KBL (do not forget to remove `-disablegfxfirmware` boot-arg)
+- Add GuC microcode loading on desktop SKL/KBL 10.13 (do not forget to remove `-disablegfxfirmware` boot-arg)
+- Add `igfxfw=0/1` boot-arg to decide whether to load GuC firmware (enabled by default)
 - Add latest GuC microcode for SKL (9.33) and KBL (9.39) from Linux
 - Add MEI/HECI -> IMEI automatic rename
 - Fix compatibility with connector-less frames
