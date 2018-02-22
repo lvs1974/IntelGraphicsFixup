@@ -57,12 +57,18 @@ static size_t kextListSize = arrsize(kextList);
 
 bool IGFX::init() {
 	PE_parse_boot_argn("igfxrst", &resetFramebuffer, sizeof(resetFramebuffer));
+	PE_parse_boot_argn("igfxfw", &decideLoadFirmware, sizeof(decideLoadFirmware));
 
 	// Allow GuC firmware patches to be disabled
 	int tmp;
-	if (PE_parse_boot_argn("-disablegfxfirmware", &tmp, sizeof(tmp))) {
-		SYSLOG("igfx", "-disablegfxfirmware flag may negatively affect IGPU performance! Remove it!");
+	if (getKernelVersion() < KernelVersion::HighSierra || decideLoadFirmware == 0) {
+		// Only High Sierra drivers support GuC firmware loading.
 		progressState |= ProcessingState::CallbackGuCFirmwareUpdateRouted;
+		decideLoadFirmware = 0;
+	} else if (PE_parse_boot_argn("-disablegfxfirmware", &tmp, sizeof(tmp))) {
+		SYSLOG("igfx", "-disablegfxfirmware flag may negatively affect IGPU performance!");
+		progressState |= ProcessingState::CallbackGuCFirmwareUpdateRouted;
+		decideLoadFirmware = 0;
 	}
 
 	auto error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher) {
@@ -207,8 +213,9 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 	if (dev && dev->getObject("GraphicsSchedulerSelect")) {
 		auto newDev = OSDynamicCast(OSDictionary, dev->copyCollection());
 		if (newDev) {
-			DBGLOG("igfx", "forcing to use normal GuC firmware");
-			newDev->setObject("GraphicsSchedulerSelect", OSNumber::withNumber(4, 32));
+			uint32_t sched = callbackIgfx->decideLoadFirmware ? 4 : 2;
+			DBGLOG("igfx", "forcing GuC firmware preference %d", sched);
+			newDev->setObject("GraphicsSchedulerSelect", OSNumber::withNumber(sched, 32));
 			that->setProperty("Development", newDev);
 		}
 	}
@@ -227,6 +234,39 @@ bool IGFX::loadGuCBinary(void *that) {
 		callbackIgfx->performingFirmwareLoad = false;
 	}
 	return r;
+}
+
+bool IGFX::loadFirmware(IOService *that) {
+	bool r = false;
+	if (callbackIgfx) {
+		DBGLOG("igfx", "load firmware setting sleep overrides %d", callbackIgfx->cpuGeneration);
+		// We have to patch the virtual table, because the original methods are very short.
+		// See __ZN12IGScheduler415systemWillSleepEv and __ZN12IGScheduler413systemDidWakeEv
+		// Note, that other methods are also not really implemented, so we may have to implement them ourselves sooner or later.
+		(*reinterpret_cast<uintptr_t **>(that))[52] = reinterpret_cast<uintptr_t>(systemWillSleep);
+		(*reinterpret_cast<uintptr_t **>(that))[53] = reinterpret_cast<uintptr_t>(systemDidWake);
+		r = callbackIgfx->orgLoadFirmware(that);
+	}
+	return r;
+}
+
+void IGFX::systemWillSleep(IOService *that) {
+	DBGLOG("igfx", "systemWillSleep GuC callback");
+	// Perhaps we want to send a message to GuC firmware like Apple does for its own implementation?
+}
+
+void IGFX::systemDidWake(IOService *that) {
+	DBGLOG("igfx", "systemDidWake GuC callback");
+	if (callbackIgfx) {
+		// This is IGHardwareGuC class instance.
+		auto &GuC = (reinterpret_cast<OSObject **>(that))[76];
+		DBGLOG("igfx", "reloading firmware on wake discovered IGHardwareGuC %d", GuC ? 1 : 0);
+		if (GuC) {
+			GuC->release();
+			GuC = nullptr;
+		}
+		callbackIgfx->orgLoadFirmware(that);
+	}
 }
 
 bool IGFX::initSchedControl(void *that) {
@@ -544,6 +584,21 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 							}
 						} else {
 							SYSLOG("igfx", "failed to resolve __ZN13IGHardwareGuC13loadGuCBinaryEv");
+						}
+
+						auto loadFW = patcher.solveSymbol(index, "__ZN12IGScheduler412loadFirmwareEv");
+						if (loadFW) {
+							DBGLOG("igfx", "obtained __ZN12IGScheduler412loadFirmwareEv");
+							patcher.clearError();
+
+							orgLoadFirmware = reinterpret_cast<t_load_firmware>(patcher.routeFunction(loadFW, reinterpret_cast<mach_vm_address_t>(loadFirmware), true));
+							if (patcher.getError() == KernelPatcher::Error::NoError) {
+								DBGLOG("igfx", "routed __ZN12IGScheduler412loadFirmwareEv");
+							} else {
+								SYSLOG("igfx", "failed to route __ZN12IGScheduler412loadFirmwareEv");
+							}
+						} else {
+							SYSLOG("igfx", "failed to resolve __ZN12IGScheduler412loadFirmwareEv");
 						}
 
 						auto initSched = patcher.solveSymbol(index, "__ZN13IGHardwareGuC16initSchedControlEv");
