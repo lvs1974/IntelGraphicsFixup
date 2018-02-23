@@ -3,7 +3,7 @@
  *
  *      File: Intel Framebuffer kexts from 10.13.3
  *   Authors: vit9696
- *   Version: 0.3
+ *   Version: 0.4
  *   Purpose: Intel Framebuffer decoding
  *
  * Copyright (c) 2018 vit9696
@@ -67,20 +67,32 @@ union FramebufferFlags {
          * Defaults to 14, can be overridden by VideoTurboFreq in the plist FeatureControl section.
          */
         uint8_t FBUseVideoTurbo              :1;  /* 0x20 */
-        /* Discovered in AppleIntelFramebuffer::getDisplayStatus. Appears to be connected to kIODisplayPowerState enum.
-         * Enforces display power on even when display flagset (dflg?) has 0x8 bit set. 
+        /* Discovered in AppleIntelFramebuffer::getDisplayStatus.
+         * Enforces display power reset even on always connected displays (see connector flags CNConnectorAlwaysConnected). 
          */
-        uint8_t FBForcePowerDisplay          :1;  /* 0x40 */
-        /* According to joevt this enforces High Bitrate mode 1, which limits DP bitrate to 8.64 Gbit/s instead of normal 17.28 Gbit/s (HBR2). */
+        uint8_t FBForcePowerAlwaysConnected  :1;  /* 0x40 */
+        /* According to joevt this enforces High Bitrate mode 1, which limits DP bitrate to 8.64 Gbit/s instead of normal 17.28 Gbit/s (HBR2).
+         * I do not think this is used on Skylake any longer.
+         */
         uint8_t FBDisableHighBitrateMode2    :1;  /* 0x80 */
-        uint8_t FBUnknownFlag_100            :1;  /* 0x100 */
-        /* According to joevt this enforces 4096 limit for ValidateSourceSize. I cannot prove it or find the usage in SKL. */
-        uint8_t FBFrameBuffer4096Limit       :1;  /* 0x200 */
-        /* Discovered in AppleIntelFramebufferController::start.
-         * Sets bit 12 of RC6_RegBase+0xc2020 and bit 5 of RC6_RegBase+0xc2004
+        /* This bit is not used on Broadwell and newer but set when fPortCount > 0, i.e. for all online framebuffers.
+         * On Haswell it is used by AppleIntelFramebuffer::GetOnlineInfo and is set only on 0x0D260007 (MacBookPro11,3) and 0x0D26000E, which are top models.
+         * This appears to boost pixel frequency limit (aka pixel clock) to 540000000 Hz (from the usual 216000000, 320000000, 360000000, 450000000).
          */
-        uint8_t FBPowerManagementGranularity1:1;  /* 0x400 */
-        uint8_t FBPowerManagementGranularity2:1;  /* 0x800 */
+        uint8_t FBBoostPixelFrequencyLimit   :1;  /* 0x100 */
+        /* Discovered in AppleIntelFramebuffer::ValidateSourceSize.
+         * Limits source size to 4096x4096.
+         */
+        uint8_t FBLimit4KSourceSize          :1;  /* 0x200 */
+        /* Discovered in AppleIntelFramebufferController::start.
+         * These bits appear to be entirely equivalent and could be used interchangeably. Result in setting:
+         * - PCH_LP_PARTITION_LEVEL_DISABLE (1 << 12) bit in SOUTH_DSPCLK_GATE_D (0xc2020)
+         * - LPT_PWM_GRANULARITY (1 << 5) bit in SOUTH_CHICKEN2 (0xc2004)
+         * See Linux driver sources (lpt_init_clock_gating, lpt_enable_backlight).
+         * Since these bits are setting backlight pulse width modularity, there is no sense in setting them without a built-in display (i.e. on desktop).
+         */
+        uint8_t FBAlternatePWMIncrement1     :1;  /* 0x400 */
+        uint8_t FBAlternatePWMIncrement2     :1;  /* 0x800 */
         /* Discovered in Broadwell AppleIntelFBController::start / AppleIntelFBController::getFeatureControl.
          * This is equivalent to setting DisableFeatureIPS=1 in the plist FeatureControl section.
          * IPS stands for Intermediate Pixel Storage
@@ -88,6 +100,7 @@ union FramebufferFlags {
         uint8_t FBDisableFeatureIPS          :1;  /* 0x1000 */
         uint8_t FBUnknownFlag_2000           :1;  /* 0x2000 */
         /* Discovered in Broadwell AppleIntelFBController::getOSInformation.
+         * Used by AppleIntelFramebufferController::LinkTraining for camelia version 2.
          * Can be overridden by -notconrecover boot-arg, which effectively unsets this bit.
          */
         uint8_t FBAllowConnectorRecover      :1;  /* 0x4000 */
@@ -106,9 +119,14 @@ union FramebufferFlags {
          */
         uint8_t FBEnableDynamicCDCLK         :1;  /* 0x200000 */
         uint8_t FBUnknownFlag_400000         :1;  /* 0x400000 */
-        /* Discovered in AppleIntelFramebuffer::enableController */
-        uint8_t FBUnknownFlag_800000         :1;  /* 0x800000 */
+        /* Discovered in AppleIntelFramebuffer::enableController.
+         * Used by AppleIntelFramebuffer::ValidateSourceSize.
+         * Setting this bit increases the maximum source size from 4096x4096 to 5120x5120.
+         * Most likely this enables 5K support via Intel HD.
+         */
+        uint8_t FBSupport5KSourceSize        :1;  /* 0x800000 */
         uint8_t FBUknownZeroFlags;
+        Assert(FBUknownZeroFlags == 0, "FBUknownZeroFlags are not zero, new flags were added!");
     } bits;
     uint32_t value;
 };
@@ -137,8 +155,8 @@ union ConnectorFlags {
         uint8_t CNAlterAppertureRequirements :1;  /* 0x1 */
         uint8_t CNUnknownFlag_2              :1;  /* 0x2 */
         uint8_t CNUnknownFlag_4              :1;  /* 0x4 */
-        /* Connector can go offline? */
-        uint8_t CNConnectorCanGoOffline      :1;  /* 0x8 */
+        /* Normally set for LVDS displays (i.e. built-in displays) */
+        uint8_t CNConnectorAlwaysConnected   :1;  /* 0x8 */
         uint8_t CNUnknownFlag_10             :1;  /* 0x10 */
         uint8_t CNUnknownFlag_20             :1;  /* 0x20 */
         /* Disable blit translation table? AppleIntelFramebufferController::ConfigureBufferTranslation */
@@ -153,6 +171,7 @@ union ConnectorFlags {
         uint8_t CNUnknownFlag_4000           :1;  /* 0x4000 */
         uint8_t CNUnknownFlag_8000           :1;  /* 0x8000 */
         uint16_t CNUnknownZeroFlags;
+        Assert(CNUnknownZeroFlags == 0, "CNUnknownZeroFlags are not zero, new flags were added!");
     } bits;
     uint32_t value;
 };
@@ -232,6 +251,7 @@ struct FramebufferSNB {
     local uint32_t fUnifiedMemorySize = 0;
     local uint8_t  cameliaVersion = CameliaUnsupported;
     local uint32_t flags = 0;
+    local uint64_t fModelNameAddr = 0;
 };
 
 uint32_t frameIdFromIndex(uint32_t index) {
@@ -265,6 +285,7 @@ struct FramebufferIVB {
     uint32_t pad2[26];
     local uint8_t  cameliaVersion = CameliaUnsupported;
     local uint32_t flags = 0;
+    local uint64_t fModelNameAddr = 0;
 };
 
 /* Some names are taken from 10.9 Azul driver. While they may not be the same names used in the struct, they are handy at least. */
@@ -287,7 +308,11 @@ struct FramebufferHSW {
     FramebufferFlags flags <read=framebufferFlagsToPrintable>;
     uint8_t  unk1[3];
     uint8_t  cameliaVersion <read=cameliaToPrintable>;
-    uint32_t unk2[4];
+    uint32_t unk2;
+    uint32_t fNumTransactionsThreshold;
+    uint32_t fVideoTurboFreq;
+    uint32_t unk3;
+    local uint64_t fModelNameAddr = 0;
 };
 
 struct FramebufferBDW {
@@ -311,13 +336,14 @@ struct FramebufferBDW {
     uint32_t fNumTransactionsThreshold;
     uint32_t fVideoTurboFreq;
     uint32_t fRC6_Threshold;
+    local uint64_t fModelNameAddr = 0;
 };
 
 struct FramebufferSKL {
     uint32_t framebufferId;
-    uint32_t unk1;
-    uint32_t unk2;
-    uint32_t unk3;
+    uint32_t pad;
+    Assert(pad == 0, "Non-zero sequence");
+    uint64_t fModelNameAddr <read=modelNameAddrToPrintable>;
     /* While it is hard to be sure, because having 0 here results in online=true returned by
      * AppleIntelFramebuffer::GetOnlineInfo, after all it appears to be the case, and the unused
      * so-called mobile framebufers are simply set to fail-safe defaults.
@@ -332,21 +358,29 @@ struct FramebufferSKL {
     uint32_t fUnifiedMemorySize <read=bytesToPrintable>;
     uint32_t fBacklightFrequency <read=frequencyToPrintable>;
     uint32_t fBacklightMax <read=frequencyToPrintable>;
-    uint32_t pad[2];
-    Assert(pad[0] == 0 && pad[1] == 0, "Non-zero sequence");
+    uint32_t pad2[2];
+    Assert(pad2[0] == 0 && pad2[1] == 0, "Non-zero sequence");
     ConnectorInfo connectors[4] <read=connectorToPrintable, optimize=false>;
-    /* This might be pretty messed up... */
     FramebufferFlags flags <read=framebufferFlagsToPrintable>;
-    uint32_t unk4;
+    /* Check DDI Buffer Translations in Linux driver for details. */
+    uint8_t fBTTableOffsetIndexSlice; /* FBEnableSliceFeatures = 1 */
+    uint8_t fBTTableOffsetIndexNormal; /* FBEnableSliceFeatures = 0 */
+    uint8_t fBTTableOffsetIndexHDMI; /* fDisplayType = 1 */
+    uint8_t pad3;
+    Assert(pad3 == 0, "Non-zero sequence");
     uint32_t cameliaVersion <read=cameliaToPrintable>;
-    uint32_t unk5[6];
+    uint64_t unk3[3];
     uint32_t fNumTransactionsThreshold;
     /* Defaults to 14, used when UseVideoTurbo bit is set */
     uint32_t fVideoTurboFreq;
-    uint32_t unk6[7];
+    uint32_t pad4;
+    Assert(pad4 == 0, "Non-zero sequence");
+    uint64_t fBTTArraySliceAddr;
+    uint64_t fBTTArrayNormalAddr;
+    uint64_t fBTTArrayHDMIAddr;
     uint32_t fSliceCount;
     uint32_t fEuCount;
-    uint32_t unk7[2];
+    uint32_t unk6[2];
 };
 
 string bytesToPrintable(uint32_t bytes) {
@@ -407,33 +441,42 @@ string connectorFlagsToPrintable(ConnectorFlags &flags) {
     return out;
 }
 
+string modelNameAddrToPrintable(uint64_t addr) {
+    return ReadLine(addr);
+}
+
 string framebufferSNBToPrintable(FramebufferSNB &fb) {
     local string out;
-    SPrintf(out, "0x%08X (%s, %s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop", fb.fPortCount > 0 ? "online" : "offline");
+    SPrintf(out, "0x%08X (%s, %d connectors%s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop",
+        fb.fPortCount, fb.fFramebufferMemorySize == 0 ? ", no fbmem" : "");
     return out;
 }
 
 string framebufferIVBToPrintable(FramebufferIVB &fb) {
     local string out;
-    SPrintf(out, "0x%08X (%s, %s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop", fb.fPortCount > 0 ? "online" : "offline");
+    SPrintf(out, "0x%08X (%s, %d connectors%s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop",
+        fb.fPortCount, fb.fFramebufferMemorySize == 0 ? ", no fbmem" : "");
     return out;
 }
 
 string framebufferHSWToPrintable(FramebufferHSW &fb) {
     local string out;
-    SPrintf(out, "0x%08X (%s, %s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop", fb.fPortCount > 0 ? "online" : "offline");
+    SPrintf(out, "0x%08X (%s, %d connectors%s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop",
+        fb.fPortCount, fb.fFramebufferMemorySize == 0 ? ", no fbmem" : "");
     return out;
 }
 
 string framebufferBDWToPrintable(FramebufferBDW &fb) {
     local string out;
-    SPrintf(out, "0x%08X (%s, %s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop", fb.fPortCount > 0 ? "online" : "offline");
+    SPrintf(out, "0x%08X (%s, %d connectors%s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop",
+        fb.fPortCount, fb.fFramebufferMemorySize == 0 ? ", no fbmem" : "");
     return out;
 }
 
 string framebufferSKLToPrintable(FramebufferSKL &fb) {
     local string out;
-    SPrintf(out, "0x%08X (%s, %s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop", fb.fPortCount > 0 ? "online" : "offline");
+    SPrintf(out, "0x%08X (%s, %d connectors%s)", fb.framebufferId, fb.fMobile ? "mobile" : "desktop",
+        fb.fPortCount, fb.fFramebufferMemorySize == 0 ? ", no fbmem" : "");
     return out;
 }
 
@@ -468,6 +511,8 @@ while (pos < size) {
         Printf("ID: 0x%08X, DVMT: %s, FBMEM: %s, VRAM: %s, Flags: 0x%08X\n", frames[i].framebufferId == 0 ? frameIdFromIndex(i) : frames[i].framebufferId,
             bytesToPrintable(frames[i].fStolenMemorySize), bytesToPrintable(frames[i].fFramebufferMemorySize), bytesToPrintable(frames[i].fUnifiedMemorySize),
             firstId == FirstSandyBridgeId || firstId == FirstIvyBridgeId ? 0 : frames[i].flags.value);
+        if (frames[i].fModelNameAddr != 0)
+            Printf("Model name: %s\n", modelNameAddrToPrintable(frames[i].fModelNameAddr));
         Printf("Camelia: %s, Freq: %s, FreqMax: %s\n", cameliaToPrintable(frames[i].cameliaVersion), 
             frequencyToPrintable(frames[i].fBacklightFrequency), frequencyToPrintable(frames[i].fBacklightMax));
         Printf("Mobile: %d, PipeCount: %d, PortCount: %d, FBMemoryCount: %d\n", frames[i].fMobile, frames[i].fPipeCount,
