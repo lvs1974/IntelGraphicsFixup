@@ -35,6 +35,22 @@ private:
 	void processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
 
 	/**
+	 *  Patch kext to support loading IGScheduler4.
+	 *
+	 *  @param patcher KernelPatcher instance
+	 *  @param index   kinfo handle
+	 */
+	void loadIGScheduler4Patches(KernelPatcher &patcher, size_t index);
+
+	/**
+	 *  Patch kext to support loading IGGuC.
+	 *
+	 *  @param patcher KernelPatcher instance
+	 *  @param index   kinfo handle
+	 */
+	void loadIGGuCPatches(KernelPatcher &patcher, size_t index);
+
+	/**
 	 *  PAVP session command type
 	 */
 	using PAVPSessionCommandID_t = int32_t;
@@ -60,19 +76,21 @@ private:
 	using t_intel_graphics_start = bool (*)(IOService *that, IOService *);
 
 	/**
-	 *  IGHardwareGuC::loadGuCBinary callback type
+	 *  IGHardwareGuC::loadGuCBinary or IGGuC::loadBinary callback type
+	 *  The latter has one more arg.
 	 */
-	using t_load_guc_binary = bool (*)(void *that);
+	using t_load_guc_binary = bool (*)(void *that, bool flag);
 
 	/**
-	 *  IGScheduler4::loadFirmware callback type
+	 *  IGScheduler4::loadFirmware callback type.
+	 *  We have to wrap this to implement sleep wake firmware loading code in IGScheduler4.
 	 */
 	using t_load_firmware = bool (*)(void *that);
 
 	/**
-	 *  IGHardwareGuC::initSchedControl callback type
+	 *  IGHardwareGuC::initSchedControl or IGGuC::initGucCtrl callback type
 	 */
-	using t_init_sched_control = bool (*)(void *that);
+	using t_init_sched_control = bool (*)(void *that, void *ctrl);
 
 	/**
 	 *  IGSharedMappedBuffer::withOptions callback type
@@ -85,19 +103,28 @@ private:
 	using t_ig_get_gpu_vaddr = void *(*)(void *that);
 
 	/**
+	 *  IGGuC::dmaHostToGuC callback type (we use it to correct the sizes)
+	 */
+	using t_dma_host_to_guc = bool (*)(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType, bool unk);
+
+	using t_send_message = bool (*)(void *that, void *message, unsigned int reg);
+
+	/**
 	 *  Hooked methods / callbacks
 	 */
 	static uint32_t pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t passed_session_cmd, uint32_t a3, uint32_t *a4, bool passed_flag);
 	static void frameBufferInit(void *that);
 	static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
 	static bool intelGraphicsStart(IOService *that, IOService *provider);
-	static bool loadGuCBinary(void *that);
+	static bool canLoadFirmware(void *that, void *accelerator);
+	static bool loadGuCBinary(void *that, bool flag);
 	static bool loadFirmware(IOService *that);
 	static void systemWillSleep(IOService *that);
 	static void systemDidWake(IOService *that);
-	static bool initSchedControl(void *that);
+	static bool initSchedControl(void *that, void *ctrl);
 	static void *igBufferWithOptions(void *accelTask, unsigned long size, unsigned int type, unsigned int flags);
 	static void *igBufferGetGpuVirtualAddress(void *that);
+	static bool dmaHostToGuC(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType, bool unk);
 
 	/**
 	 *  Trampolines for original method invocations
@@ -111,12 +138,14 @@ private:
 	t_init_sched_control orgInitSchedControl {nullptr};
 	t_ig_buffer_with_options orgIgBufferWithOptions {nullptr};
 	t_ig_get_gpu_vaddr orgIgGetGpuVirtualAddress {nullptr};
+	t_dma_host_to_guc orgDmaHostToGuC {nullptr};
 
 	/**
 	 *  External global variables
 	 */
 	uint8_t *gIOFBVerboseBootPtr {nullptr};
 	uint8_t *gKmGen9GuCBinary {nullptr};
+	uint8_t *canUseSpringboard {nullptr};
 
 	enum FramebufferFixMode {
 		FBDEFAULT  = 0,
@@ -130,9 +159,22 @@ private:
 	uint32_t resetFramebuffer {FBDEFAULT};
 
 	/**
-	 *  Framebuffer firmware loading mode, enable by default
+	 *  Scheduler types
 	 */
-	int32_t decideLoadFirmware {1};
+	enum SchedulerDecision {
+		BasicScheduler = 0,
+		ReferenceScheduler = 1,
+		AppleScheduler = 2,
+		TotalSchedulers = 3
+	};
+
+	/**
+	 *  Scheduler loading modes:
+	 *  0 - disable firmware (IGScheduler2)
+	 *  1 - use reference firmware scheduler (IGScheduler4)
+	 *  2 - use Apple firmware scheduler (IGGuC)
+	 */
+	uint32_t decideLoadScheduler {BasicScheduler};
 
 	/**
 	 *  CPU generation
@@ -188,12 +230,17 @@ private:
 	/**
 	 *  Dummy firmware buffer to store unused old firmware in
 	 */
-	uint8_t *dummyFirmwareBuffer {nullptr};
+	uint8_t *dummyFirmwareBuffer[4] {};
 
 	/**
 	 *  Actual firmware buffer we store our new firmware in
 	 */
-	uint8_t *realFirmwareBuffer {nullptr};
+	uint8_t *realFirmwareBuffer[4] {};
+
+	/**
+	 *  Actual intercepted binary sizes
+	 */
+	uint32_t realBinarySize[4] {};
 
 	/**
 	 *  Pointer to the size assignment
@@ -203,7 +250,24 @@ private:
 	/**
 	 *  Pointer to the signature
 	 */
-	uint8_t *signaturePointer {nullptr};
+	uint8_t *signaturePointer[4] {};
+
+	/**
+	 *  Current binary index
+	 *  0 is GuC, 1 is HuC, 2 is HuC signature, 3 is GuC public key.
+	 */
+	int32_t currentBinaryIndex {-1};
+
+	/**
+	 *  Current dma load index
+	 *  0 is HuC, 1 is GuC.
+	 */
+	int32_t currentDmaIndex {-1};
+
+	/**
+	 *  Decides on whether to intercept binary loading.
+	 */
+	bool binaryInterception[4] {true, true, false, false};
 
 	/**
 	 *  Current progress mask
