@@ -63,6 +63,7 @@
 		CE405EDA1E4A080F00AA0B3D /* plugin_start.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = plugin_start.hpp; sourceTree = "<group>"; };
 		CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kern_guc.cpp; sourceTree = "<group>"; };
 		CE6A853E203AB2ED00B8FFFA /* kern_guc.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_guc.hpp; sourceTree = "<group>"; };
+		CEA51CAF2042B29B00CDD1E9 /* kern_regs.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_regs.hpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,6 +105,7 @@
 				CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */,
 				CE6A853E203AB2ED00B8FFFA /* kern_guc.hpp */,
 				1C9CB7AE1C789FF500231E41 /* kern_igfx.cpp */,
+				CEA51CAF2042B29B00CDD1E9 /* kern_regs.hpp */,
 				1C9CB7AF1C789FF500231E41 /* kern_igfx.hpp */,
 				CE22EA382038BE8A002A88A5 /* kern_model.cpp */,
 				CE22EA392038BE8A002A88A5 /* kern_model.hpp */,

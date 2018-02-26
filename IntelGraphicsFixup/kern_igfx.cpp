@@ -17,6 +17,7 @@
 #include "kern_igfx.hpp"
 #include "kern_guc.hpp"
 #include "kern_model.hpp"
+#include "kern_regs.hpp"
 
 // Only used in apple-driven callbacks
 static IGFX *callbackIgfx = nullptr;
@@ -25,6 +26,7 @@ static KernelPatcher *callbackPatcher = nullptr;
 static const char *kextHD3000Path[]          { "System/Library/Extensions/AppleIntelHD3000Graphics.kext/Contents/MacOS/AppleIntelHD3000Graphics" };
 static const char *kextHD4000Path[]          { "/System/Library/Extensions/AppleIntelHD4000Graphics.kext/Contents/MacOS/AppleIntelHD4000Graphics" };
 static const char *kextHD5000Path[]          { "/System/Library/Extensions/AppleIntelHD5000Graphics.kext/Contents/MacOS/AppleIntelHD5000Graphics" };
+static const char *kextBDWPath[]             { "/System/Library/Extensions/AppleIntelBDWGraphics.kext/Contents/MacOS/AppleIntelBDWGraphics" };
 static const char *kextSKLPath[]             { "/System/Library/Extensions/AppleIntelSKLGraphics.kext/Contents/MacOS/AppleIntelSKLGraphics" };
 static const char *kextSKLFramebufferPath[]  { "/System/Library/Extensions/AppleIntelSKLGraphicsFramebuffer.kext/Contents/MacOS/AppleIntelSKLGraphicsFramebuffer" };
 static const char *kextKBLPath[]             { "/System/Library/Extensions/AppleIntelKBLGraphics.kext/Contents/MacOS/AppleIntelKBLGraphics" };
@@ -32,20 +34,22 @@ static const char *kextKBLFramebufferPath[]  { "/System/Library/Extensions/Apple
 static const char *kextIOGraphicsPath[]      { "/System/Library/Extensions/IOGraphicsFamily.kext/IOGraphicsFamily" };
 
 static KernelPatcher::KextInfo kextList[] {
-	{ "com.apple.driver.AppleIntelHD3000Graphics",         kextHD3000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.driver.AppleIntelHD4000Graphics",         kextHD4000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.driver.AppleIntelHD5000Graphics",         kextHD5000Path,         1, {}, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.driver.AppleIntelSKLGraphics",            kextSKLPath,            1, {}, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 1, {}, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.driver.AppleIntelKBLGraphics",            kextKBLPath,            1, {}, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.driver.AppleIntelKBLGraphicsFramebuffer", kextKBLFramebufferPath, 1, {}, {}, KernelPatcher::KextInfo::Unloaded },
-	{ "com.apple.iokit.IOGraphicsFamily",                  kextIOGraphicsPath,     1, {true}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelHD3000Graphics",         kextHD3000Path,         0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelHD4000Graphics",         kextHD4000Path,         0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelHD5000Graphics",         kextHD5000Path,         0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelBDWGraphics",            kextBDWPath,            0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelSKLGraphics",            kextSKLPath,            0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelSKLGraphicsFramebuffer", kextSKLFramebufferPath, 0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelKBLGraphics",            kextKBLPath,            0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.driver.AppleIntelKBLGraphicsFramebuffer", kextKBLFramebufferPath, 0, {}, {}, KernelPatcher::KextInfo::Unloaded },
+	{ "com.apple.iokit.IOGraphicsFamily",                  kextIOGraphicsPath,     0, {true}, {}, KernelPatcher::KextInfo::Unloaded },
 };
 
 enum : size_t {
 	KextHD3000Graphics,
 	KextHD4000Graphics,
 	KextHD5000Graphics,
+	KextBDWGraphics,
 	KextSKLGraphics,
 	KextSKLGraphicsFramebuffer,
 	KextKBLGraphics,
@@ -59,17 +63,64 @@ bool IGFX::init() {
 	PE_parse_boot_argn("igfxrst", &resetFramebuffer, sizeof(resetFramebuffer));
 	PE_parse_boot_argn("igfxfw", &decideLoadScheduler, sizeof(decideLoadScheduler));
 
-	int tmp;
+	uint32_t family = 0, model = 0;
+	cpuGeneration = CPUInfo::getGeneration(&family, &model);
+	switch (cpuGeneration) {
+		case CPUInfo::CpuGeneration::SandyBridge:
+			kextList[KextHD3000Graphics].pathNum = arrsize(kextHD3000Path);
+			progressState |= ProcessingState::CallbackComputeLaneCountRouted |
+				ProcessingState::CallbackGuCFirmwareUpdateRouted;
+			break;
+		case CPUInfo::CpuGeneration::IvyBridge:
+			kextList[KextHD4000Graphics].pathNum = arrsize(kextHD4000Path);
+			progressState |= ProcessingState::CallbackComputeLaneCountRouted |
+				ProcessingState::CallbackGuCFirmwareUpdateRouted;
+			break;
+		case CPUInfo::CpuGeneration::Haswell:
+			kextList[KextHD5000Graphics].pathNum = arrsize(kextHD5000Path);
+			progressState |= ProcessingState::CallbackComputeLaneCountRouted |
+				ProcessingState::CallbackGuCFirmwareUpdateRouted;
+			break;
+		case CPUInfo::CpuGeneration::Broadwell:
+			kextList[KextBDWGraphics].pathNum = arrsize(kextBDWPath);
+			progressState |= ProcessingState::CallbackComputeLaneCountRouted |
+				ProcessingState::CallbackGuCFirmwareUpdateRouted;
+			break;
+		case CPUInfo::CpuGeneration::Skylake:
+			kextList[KextSKLGraphics].pathNum = arrsize(kextSKLPath);
+			kextList[KextSKLGraphicsFramebuffer].pathNum = arrsize(kextSKLFramebufferPath);
+			break;
+		case CPUInfo::CpuGeneration::KabyLake:
+			kextList[KextKBLGraphics].pathNum = arrsize(kextKBLPath);
+			kextList[KextKBLGraphicsFramebuffer].pathNum = arrsize(kextKBLFramebufferPath);
+			break;
+		default:
+			SYSLOG("igfx", "found an unsupported processor 0x%X:0x%X, please report this!", family, model);
+			progressState |= ProcessingState::CallbackPavpSessionRouted |
+				ProcessingState::CallbackComputeLaneCountRouted |
+				ProcessingState::CallbackDriverStartRouted |
+				ProcessingState::CallbackGuCFirmwareUpdateRouted;
+			break;
+	}
+
+	if (getKernelVersion() >= KernelVersion::Yosemite)
+		kextList[KextIOGraphicsFamily].pathNum = arrsize(kextIOGraphicsPath);
+	else
+		progressState |= ProcessingState::CallbackFrameBufferInitRouted;
+
 	// Allow GuC firmware patches to be disabled
-	if (getKernelVersion() < KernelVersion::HighSierra && decideLoadScheduler == 1) {
-		SYSLOG("igfx", "IGScheduler4 unsupported before 10.13, disabling GuC!");
-		decideLoadScheduler = BasicScheduler;
-	} else if (PE_parse_boot_argn("-disablegfxfirmware", &tmp, sizeof(tmp))) {
-		SYSLOG("igfx", "-disablegfxfirmware flag may negatively affect IGPU performance!");
-		decideLoadScheduler = BasicScheduler;
-	} else if (decideLoadScheduler >= TotalSchedulers) {
-		SYSLOG("igfx", "invalid igfxfw option, disabling GuC!");
-		decideLoadScheduler = BasicScheduler;
+	if (!(progressState & ProcessingState::CallbackGuCFirmwareUpdateRouted)) {
+		int tmp;
+		if (getKernelVersion() < KernelVersion::HighSierra && decideLoadScheduler == ReferenceScheduler) {
+			SYSLOG("igfx", "IGScheduler4 unsupported before 10.13, disabling GuC!");
+			decideLoadScheduler = BasicScheduler;
+		} else if (PE_parse_boot_argn("-disablegfxfirmware", &tmp, sizeof(tmp))) {
+			SYSLOG("igfx", "-disablegfxfirmware is not necessary with IntelGraphicsFixup!");
+			decideLoadScheduler = BasicScheduler;
+		} else if (decideLoadScheduler >= TotalSchedulers) {
+			SYSLOG("igfx", "invalid igfxfw option, disabling GuC!");
+			decideLoadScheduler = BasicScheduler;
+		}
 	}
 
 	auto error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher) {
@@ -97,16 +148,16 @@ bool IGFX::init() {
 
 void IGFX::deinit() {}
 
-uint32_t IGFX::pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t passed_session_cmd, uint32_t a3, uint32_t *a4, bool passed_flag) {
-	//DBGLOG("igfx, "pavpCallback: passed_session_cmd = %d, passed_flag = %d, a3 = %d, a4 = %s", passed_session_cmd, passed_flag, a3, a4 == nullptr ? "null" : "not null");
+uint32_t IGFX::pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t sessionCommand, uint32_t sessionAppId, uint32_t *a4, bool flag) {
+	//DBGLOG("igfx, "pavpCallback: cmd = %d, flag = %d, app = %d, a4 = %s", sessionCommand, flag, sessionAppId, a4 == nullptr ? "null" : "not null");
 
 	if (callbackIgfx && callbackPatcher && callbackIgfx->orgPavpSessionCallback) {
-		if (passed_session_cmd == 4) {
+		if (sessionCommand == 4) {
 			DBGLOG("igfx", "pavpSessionCallback: enforcing error on cmd 4 (send to ring?)!");
 			return 0xE00002D6; // or 0
 		}
 
-		return callbackIgfx->orgPavpSessionCallback(intelAccelerator, passed_session_cmd, a3, a4, passed_flag);
+		return callbackIgfx->orgPavpSessionCallback(intelAccelerator, sessionCommand, sessionAppId, a4, flag);
 	}
 
 	SYSLOG("igfx", "callback arrived at nowhere");
@@ -117,7 +168,7 @@ void IGFX::frameBufferInit(void *that) {
 	if (callbackIgfx && callbackPatcher && callbackIgfx->gIOFBVerboseBootPtr && callbackIgfx->orgFrameBufferInit) {
 		bool tryBackCopy = callbackIgfx->gotInfo && callbackIgfx->resetFramebuffer != FBRESET;
 		// For AMD we do a zero-fill.
-		bool zeroFill  = tryBackCopy && callbackIgfx->connectorLessFrame;
+		bool zeroFill  = tryBackCopy && callbackIgfx->connectorLessFrame && callbackIgfx->hasExternalAMD;
 		auto &info = callbackIgfx->vinfo;
 
 		// Copy back usually happens in a separate call to frameBufferInit
@@ -209,7 +260,8 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 
 	// By default Apple drivers load Apple-specific firmware, which is incompatible.
 	// On KBL they do it unconditionally, which causes infinite loop.
-	// There is an option to load a generic firmware, which we set here.
+	// On 10.13 there is an option to ignore/load a generic firmware, which we set here.
+	// On 10.12 we use a canLoadFirmware hook.
 	auto dev = OSDynamicCast(OSDictionary, that->getProperty("Development"));
 	if (dev && dev->getObject("GraphicsSchedulerSelect")) {
 		auto newDev = OSDynamicCast(OSDictionary, dev->copyCollection());
@@ -217,7 +269,8 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 			uint32_t sched = 2; // force disable via plist
 			if (callbackIgfx->decideLoadScheduler == ReferenceScheduler)
 				sched = 4; // force reference scheduler
-			else if (callbackIgfx->decideLoadScheduler == AppleScheduler)
+			else if (callbackIgfx->decideLoadScheduler == AppleScheduler ||
+					 callbackIgfx->decideLoadScheduler == AppleCustomScheduler)
 				sched = 3; // force apple scheduler
 			DBGLOG("igfx", "forcing scheduler preference %d", sched);
 			newDev->setObject("GraphicsSchedulerSelect", OSNumber::withNumber(sched, 32));
@@ -230,10 +283,10 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 
 bool IGFX::canLoadFirmware(void *that, void *accelerator) {
 	if (callbackIgfx) {
-		DBGLOG("igfx", "canLoadFirmware request with scheduler %d and sb ptr %d",
-			   callbackIgfx->decideLoadScheduler, callbackIgfx->canUseSpringboard ? 1 : 0);
+		DBGLOG("igfx", "canLoadFirmware request with scheduler %d", callbackIgfx->decideLoadScheduler);
 		// Ensure Apple scheduler is never loaded (on 10.12 KBL too) unless asked explicitly.
-		if (callbackIgfx->decideLoadScheduler == AppleScheduler)
+		if (callbackIgfx->decideLoadScheduler == AppleScheduler ||
+			callbackIgfx->decideLoadScheduler == AppleCustomScheduler)
 			return true;
 	}
 
@@ -246,6 +299,10 @@ bool IGFX::loadGuCBinary(void *that, bool flag) {
 		DBGLOG("igfx", "attempting to load firmware for %d scheduler for cpu gen %d",
 			   callbackIgfx->decideLoadScheduler, callbackIgfx->cpuGeneration);
 
+		// Go with for testing if requested.
+		if (callbackIgfx->decideLoadScheduler == AppleCustomScheduler)
+			return callbackIgfx->loadCustomBinary(that, flag);
+
 		// Reset binary indexes
 		callbackIgfx->currentBinaryIndex = -1;
 		callbackIgfx->currentDmaIndex = -1;
@@ -257,13 +314,14 @@ bool IGFX::loadGuCBinary(void *that, bool flag) {
 		if (callbackIgfx->decideLoadScheduler == AppleScheduler) {
 			auto intelAccelerator = static_cast<uint8_t **>(that)[2];
 			if (!(intelAccelerator[4096] & 0x10)) {
-				DBGLOG("igfx", "overwriting intelAccelerator feature bit 0x10 in 0x%02X", intelAccelerator[4096]);
+				DBGLOG("igfx", "loadBinary setting feature bit 0x10 in 0x%02X", intelAccelerator[4096]);
 				intelAccelerator[4096] |= 0x10;
 				shouldUnsetIONDrvMode = true;
 			}
 			// Ensure Apple springboard is disabled
 			if (callbackIgfx->canUseSpringboard) {
-				DBGLOG("igfx", "making sure springboard will not be loaded");
+				DBGLOG("igfx", "making sure springboard will not be loaded %d",
+					callbackIgfx->canUseSpringboard ? 1 : 0);
 				*callbackIgfx->canUseSpringboard = false;
 			}
 
@@ -276,7 +334,7 @@ bool IGFX::loadGuCBinary(void *that, bool flag) {
 		DBGLOG("igfx", "loadGuCBinary returned %d", r);
 
 		// Currently AppleScheduler does not work, for some reason after loading HuC and GuC firmwares
-		// we receive 0x71ec in GUC_STATUS (0xC000) register, which unfortunately is not documented:
+		// we receive 0x800071ec in GUC_STATUS (0xC000) register, which unfortunately is not documented:
 		// https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/i915/intel_guc_reg.h
 		// This happens right after IGGuC::actionResponseWait(this);
 		// So IGGuC::sendHostToGucMessage() is not called, and HuC firmware is not verified.
@@ -340,6 +398,18 @@ bool IGFX::initSchedControl(void *that, void *ctrl) {
 		bool perfLoad = callbackIgfx->performingFirmwareLoad;
 		callbackIgfx->performingFirmwareLoad = false;
 		r = callbackIgfx->orgInitSchedControl(that, ctrl);
+
+		if (callbackIgfx->decideLoadScheduler == ReferenceScheduler) {
+			struct ParamRegs {
+				uint32_t bak[35];
+				uint32_t params[10];
+			};
+
+			auto v = &static_cast<ParamRegs *>(that)->params[0];
+			DBGLOG("igfx", "fw params1 %08X %08X %08X %08X %08X", v[0], v[1], v[2], v[3], v[4]);
+			DBGLOG("igfx", "fw params2 %08X %08X %08X %08X %08X", v[5], v[6], v[7], v[8], v[9]);
+		}
+
 		callbackIgfx->performingFirmwareLoad = perfLoad;
 	}
 	return r;
@@ -433,8 +503,8 @@ void *IGFX::igBufferWithOptions(void *accelTask, unsigned long size, unsigned in
 	return r;
 }
 
-void *IGFX::igBufferGetGpuVirtualAddress(void *that) {
-	void *r = nullptr;
+uint64_t IGFX::igBufferGetGpuVirtualAddress(void *that) {
+	uint64_t r = 0;
 	if (callbackIgfx) {
 		auto currIndex = callbackIgfx->currentBinaryIndex;
 		bool didIntercept = callbackIgfx->performingFirmwareLoad;
@@ -450,8 +520,12 @@ void *IGFX::igBufferGetGpuVirtualAddress(void *that) {
 			// Free the dummy framebuffer which is no longer used
 			Buffer::deleter(callbackIgfx->dummyFirmwareBuffer[currIndex]);
 			callbackIgfx->dummyFirmwareBuffer[currIndex] = nullptr;
+			r = callbackIgfx->orgIgGetGpuVirtualAddress(that);
+			DBGLOG("igfx", "saving gpu address %08X for firmware %d", static_cast<uint32_t>(r), currIndex);
+			callbackIgfx->gpuFirmwareAddress[currIndex] = r;
+		} else {
+			r = callbackIgfx->orgIgGetGpuVirtualAddress(that);
 		}
-		r = callbackIgfx->orgIgGetGpuVirtualAddress(that);
 	}
 	return r;
 }
@@ -462,24 +536,256 @@ bool IGFX::dmaHostToGuC(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t 
 		callbackIgfx->currentDmaIndex++;
 		DBGLOG("igfx", "dma host -> guc to reg 0x%04X with size %04X dma %d unk %d dma index %d",
 			   gpuReg, dataLen, dmaType, unk, callbackIgfx->currentDmaIndex);
-		if (callbackIgfx->currentDmaIndex == 0 && callbackIgfx->realBinarySize[1] > 0) {
-			dataLen = callbackIgfx->realBinarySize[1];
-			DBGLOG("igfx", "dma host -> guc replaced HuC size with %04X", dataLen);
-		} else if (callbackIgfx->currentDmaIndex == 1 && callbackIgfx->realBinarySize[0] > 0) {
-			dataLen = callbackIgfx->realBinarySize[0];
-			DBGLOG("igfx", "dma host -> guc replaced GuC size with %04X", dataLen);
+		// HuC then GuC.
+		auto currIndex = callbackIgfx->currentDmaIndex;
+		if (currIndex < 2) {
+			gpuAddr = callbackIgfx->gpuFirmwareAddress[1-currIndex];
+			gpuReg = currIndex == 0 ? 0 : 0x2000;
+			dataLen = callbackIgfx->realBinarySize[1-currIndex];
+			dmaType = currIndex == 0 ? HUC_UKERNEL : UOS_MOVE;
+			DBGLOG("igfx", "dmaHostToGuC replaced with size %04X", dataLen);
+
+			return doDmaTransfer(that, gpuAddr, gpuReg, dataLen, dmaType);
+		} else {
+			r = callbackIgfx->orgDmaHostToGuC(that, gpuAddr, gpuReg, dataLen, dmaType, unk);
 		}
 
-		r = callbackIgfx->orgDmaHostToGuC(that, gpuAddr, gpuReg, dataLen, dmaType, unk);
-		DBGLOG("igfx", "dma host -> guc returned %d", r);
+		DBGLOG("igfx", "dmaHostToGuC returned %d", r);
 	}
 
 	return r;
 }
 
-void IGFX::processKernel(KernelPatcher &patcher) {
-	cpuGeneration = CPUInfo::getGeneration();
+void IGFX::initInterruptServices(void *that) {
+	if (callbackIgfx) {
+		DBGLOG("igfx", "init interrupt services");
+		callbackIgfx->orgInitInterruptServices(that);
+		callbackIgfx->resetFirmware(that);
+	}
+}
 
+uint32_t IGFX::mmioRead(void *fw, uint32_t reg) {
+	auto fIntelAccelerator = getMember<void *>(fw, 0x10);
+	auto mmio = getMember<volatile uint32_t *>(fIntelAccelerator, 0x1090);
+	return mmio[reg/4];
+}
+
+void IGFX::mmioWrite(void *fw, uint32_t reg, uint32_t v) {
+	auto fIntelAccelerator = getMember<void *>(fw, 0x10);
+	auto mmio = getMember<volatile uint32_t *>(fIntelAccelerator, 0x1090);
+	mmio[reg/4] = v;
+}
+
+bool IGFX::doDmaTransfer(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType) {
+	DBGLOG("igfx", "doDmaTransfer with size %04X, status %08X", dataLen, mmioRead(that, GUC_STATUS));
+
+	mmioWrite(that, DMA_COPY_SIZE, dataLen);
+	mmioWrite(that, DMA_ADDR_0_LOW, static_cast<uint32_t>(gpuAddr));
+	mmioWrite(that, DMA_ADDR_0_HIGH, static_cast<uint32_t>(gpuAddr >> 32) & 0xFFFF);
+	mmioWrite(that, DMA_ADDR_1_LOW, gpuReg);
+	mmioWrite(that, DMA_ADDR_1_HIGH, DMA_ADDRESS_SPACE_WOPCM);
+
+	mmioWrite(that, GEN8_GTCR, GEN8_GTCR_INVALIDATE);
+	while (mmioRead(that, GEN8_GTCR) & GEN8_GTCR_INVALIDATE);
+
+	mmioWrite(that, DMA_CTRL, 0xFFFF0000 | dmaType | START_DMA);
+
+	uint32_t status = 0, i = 0;
+	while (i < 1500) {
+		uint32_t nstatus = mmioRead(that, DMA_CTRL);
+		if (nstatus != status)
+			DBGLOG("igfx", "doDmaTransfer dma_ctrl change to %08X", nstatus);
+		nstatus = status;
+
+		if ((status & START_DMA) != START_DMA)
+			break;
+
+		IOSleep(1);
+		i++;
+	}
+
+	DBGLOG("igfx", "doDmaTransfer complete with %d cycles, dma_ctrl: %08X, status: %08X", i, status, mmioRead(that, GUC_STATUS));
+
+	status = 0;
+	i = 0;
+	while (i < 1500) {
+		uint32_t nstatus = mmioRead(that, GUC_STATUS);
+		if (nstatus != status)
+			DBGLOG("igfx", "doDmaTransfer status change to %08X", nstatus);
+		status = nstatus;
+
+		if ((status & GS_UKERNEL_MASK) == GS_UKERNEL_READY)
+			break;
+
+		IOSleep(1);
+		i++;
+	}
+
+	// This is what Linux does, also, it will not be 0xFFFF0000, but actually dmaType << 16 here and above.
+	// mmioWrite(that, DMA_CTRL, 0xFFFF0000);
+
+	DBGLOG("igfx", "doDmaTransfer verified with %d cycles and %08X status", i, status);
+
+	return ((status & GS_UKERNEL_MASK) == GS_UKERNEL_READY);
+}
+
+void IGFX::resetFirmware(void *that) {
+	DBGLOG("igfx", "before reset firmware status: %08X, reset: %08X", mmioRead(that, GUC_STATUS), mmioRead(that, GEN6_GDRST));
+
+	mmioWrite(that, GEN6_GDRST, GEN9_GRDOM_GUC);
+	uint32_t status = 0, i = 0;
+	while (i < 1500) {
+		status = mmioRead(that, GEN6_GDRST);
+
+		if ((status & GEN9_GRDOM_GUC) == 0)
+			break;
+
+		IOSleep(1);
+		i++;
+	}
+
+	DBGLOG("igfx", "after reset firmware status: %08X, reset: %08X, cycles: %d", mmioRead(that, GUC_STATUS), status, i);
+}
+
+bool IGFX::loadCustomBinary(void *that, bool restore) {
+
+	auto fIGGuCCtrl = getMember<void *>(that, 0x258);
+	auto fIntelAccelerator = getMember<void *>(that, 0x10);
+	auto fIGAccelTask = getMember<void *>(fIntelAccelerator, 0x160);
+
+	if (!restore)
+		orgInitSchedControl(that, fIGGuCCtrl);
+
+	const void *gucfw = nullptr, *gucfwsig = nullptr, *hucfw = nullptr, *hucfwsig = nullptr;
+	size_t gucfwsize = 0, hucfwsize = 0;
+
+	if (cpuGeneration == CPUInfo::CpuGeneration::Skylake) {
+		gucfw = GuCFirmwareSKL;
+		gucfwsig = GuCFirmwareSKLSignature;
+		hucfw = HuCFirmwareSKL;
+		hucfwsig = HuCFirmwareSKLSignature;
+		gucfwsize = GuCFirmwareSKLSize;
+		hucfwsize = HuCFirmwareSKLSize;
+	} else {
+		gucfw = GuCFirmwareKBL;
+		gucfwsig = GuCFirmwareKBLSignature;
+		hucfw = HuCFirmwareKBL;
+		hucfwsig = HuCFirmwareKBLSignature;
+		gucfwsize = GuCFirmwareKBLSize;
+		hucfwsize = HuCFirmwareKBLSize;
+	}
+
+	uint64_t igGuCAddr = 0, igHuCAddr = 0, igHuCSigAddr = 0;
+
+	auto igContext = orgIgBufferWithOptions(fIGAccelTask, 0x45000, 0x18, 0);
+	if (!igContext) {
+		PANIC("igfx", "failed to allocate ig context");
+	}
+
+	auto logContext = orgIgBufferWithOptions(fIGAccelTask, 0x12000, 0x1A, 0);
+	if (!logContext) {
+		PANIC("igfx", "failed to allocate log context");
+	}
+
+	auto igGuCBuffer = orgIgBufferWithOptions(fIGAccelTask, pageAlign(gucfwsize), 0x1A, 0);
+	if (igGuCBuffer) {
+		DBGLOG("igfx", "preparing GuC firmware %ld", gucfwsize);
+		auto vaddr = static_cast<uint8_t **>(igGuCBuffer)[7];
+		lilu_os_memcpy(vaddr, gucfw, gucfwsize);
+		igGuCAddr = orgIgGetGpuVirtualAddress(igGuCBuffer);
+	}
+
+	auto igHuCBuffer = orgIgBufferWithOptions(fIGAccelTask, pageAlign(hucfwsize), 0x1A, 0);
+	if (igHuCBuffer) {
+		DBGLOG("igfx", "preparing HuC firmware %ld", hucfwsize);
+		auto vaddr = static_cast<uint8_t **>(igHuCBuffer)[7];
+		lilu_os_memcpy(vaddr, hucfw, hucfwsize);
+		igHuCAddr = orgIgGetGpuVirtualAddress(igHuCBuffer);
+	}
+
+	auto igHuCSigBuffer = orgIgBufferWithOptions(fIGAccelTask, pageAlign(HuCFirmwareSignatureSize), 0x1A, 0);
+	if (igHuCSigBuffer) {
+		DBGLOG("igfx", "preparing HuC firmware sig %ld", HuCFirmwareSignatureSize);
+		auto vaddr = static_cast<uint8_t **>(igHuCSigBuffer)[7];
+		lilu_os_memcpy(vaddr, hucfwsig, HuCFirmwareSignatureSize);
+		igHuCSigAddr = orgIgGetGpuVirtualAddress(igHuCSigBuffer);
+	}
+
+	if (!igGuCAddr || !igHuCAddr || !igHuCSigAddr || !logContext) {
+		PANIC("igfx", "failed to allocate firmware buffers");
+	}
+
+	orgSafeForceWake(fIntelAccelerator, 1, 7);
+
+	DBGLOG("igfx", "initial firmware status is %08X", mmioRead(that, GUC_STATUS));
+
+	orgInitInterruptServices(that);
+
+	for (uint32_t tries = 0; tries < 3; tries++) {
+		resetFirmware(that);
+
+		mmioWrite(that, 0x1984, 1);
+		mmioWrite(that, GEN9_GT_PM_CONFIG, GT_DOORBELL_ENABLE);
+		mmioWrite(that, GEN7_MISCCPCTL, GEN8_DOP_CLOCK_GATE_GUC_ENABLE);
+
+		// 0x8607
+		mmioWrite(that, GUC_SHIM_CONTROL, GUC_DISABLE_SRAM_INIT_TO_ZEROES |
+				  GUC_ENABLE_READ_CACHE_LOGIC |
+				  GUC_ENABLE_MIA_CACHING |
+				  GUC_ENABLE_READ_CACHE_FOR_SRAM_DATA |
+				  GUC_ENABLE_READ_CACHE_FOR_WOPCM_DATA |
+				  GUC_ENABLE_MIA_CLOCK_GATING);
+		mmioWrite(that, GUC_ARAT_C6DIS, 0x1FF);
+
+		uint32_t params[10] {};
+
+		// SKL 530 has
+		// params1 4002C040 00000000 003D0903 00000601 40071FC3
+		// params2 00000000 00000008 00000002 00000000 00000000
+
+		params[GUC_CTL_ARAT_HIGH] = 0;
+		params[GUC_CTL_ARAT_LOW] = /* 100000000 */ 4000003;
+
+		params[GUC_CTL_CTXINFO] = (orgIgGetGpuVirtualAddress(igContext) & 0xFFFFF000) | 0x40;
+		params[GUC_CTL_LOG_PARAMS] = (orgIgGetGpuVirtualAddress(logContext) & 0xFFFFF000) | 0xFC3;
+
+		//params[GUC_CTL_CTXINFO] = (orgIgGetGpuVirtualAddress(getMember<void *>(that, 0x80500)) & 0xFFFFF000) | 0x40;
+		// GPU_TYPE is 0, 1, 9, 0xA
+		params[GUC_CTL_DEVICE_INFO] = (GUC_CORE_FAMILY_GEN9 << GUC_CTL_CORE_FAMILY_SHIFT) | 1;
+		params[GUC_CTL_WA] = GUC_CTL_WA_UK_BY_DRIVER;
+		params[GUC_CTL_FEATURE] = /* GUC_CTL_VCS2_ENABLED | */ GUC_CTL_KERNEL_SUBMISSIONS;
+
+		// That's what IGScheduler4 does.
+		mmioWrite(that, SOFT_SCRATCH(0), 0);
+		for (uint32_t i = 0; i < 10; i++)
+			mmioWrite(that, SOFT_SCRATCH(1 + i), params[i]);
+
+		for (uint32_t i = 0; i < UOS_RSA_SCRATCH_COUNT; i++)
+			mmioWrite(that, UOS_RSA_SCRATCH(i), reinterpret_cast<const uint32_t *>(gucfwsig)[i]);
+
+		// From Linux
+		//mmioWrite(that, DMA_GUC_WOPCM_OFFSET, GUC_WOPCM_OFFSET_VALUE | HUC_LOADING_AGENT_GUC);
+		//mmioWrite(that, GUC_WOPCM_SIZE, GUC_WOPCM_TOP);
+
+		// From Apple
+		mmioWrite(that, DMA_GUC_WOPCM_OFFSET, GUC_WOPCM_OFFSET_VALUE+1);
+		mmioWrite(that, GUC_WOPCM_SIZE, GUC_WOPCM_TOP+1);
+
+		bool r = doDmaTransfer(that, igGuCAddr, 0x2000, static_cast<uint32_t>(gucfwsize), UOS_MOVE);
+		if (r) break;
+
+		DBGLOG("igfx", "retrying due to failure");
+
+		IOSleep(3000);
+	}
+
+
+	orgSafeForceWake(fIntelAccelerator, 0, 7);
+
+	return false;
+}
+
+void IGFX::processKernel(KernelPatcher &patcher) {
 	// We need to load vinfo in all cases but reset
 	if (resetFramebuffer != FBRESET) {
 		auto info = reinterpret_cast<vc_info *>(patcher.solveSymbol(KernelPatcher::KernelID, "_vinfo"));
@@ -498,6 +804,7 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 		patcher.clearError();
 	}
 
+	// Detect all the devices
 	auto sect = WIOKit::findEntryByPrefix("/AppleACPIPlatformExpert", "PCI", gIOServicePlane);
 	if (sect) sect = WIOKit::findEntryByPrefix(sect, "AppleACPIPCI", gIOServicePlane);
 	if (sect) {
@@ -507,9 +814,11 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 			IORegistryEntry *obj = nullptr;
 			while ((obj = OSDynamicCast(IORegistryEntry, iterator->getNextObject())) != nullptr) {
 				uint32_t vendor = 0, code = 0;
-				if (WIOKit::getOSDataValue(obj, "vendor-id", vendor) && vendor == 0x8086 &&
-					WIOKit::getOSDataValue(obj, "class-code", code)) {
+				if (WIOKit::getOSDataValue(obj, "vendor-id", vendor) &&
+					WIOKit::getOSDataValue(obj, "class-code", code) &&
+					vendor == WIOKit::VendorID::Intel) {
 					const char *name = obj->getName();
+					// VGA codes
 					if (!foundIGPU && (code == 0x38000 || code == 0x30000)) {
 						DBGLOG("igfx", "found Intel GPU device %s", name);
 						if (!name || strcmp(name, "IGPU"))
@@ -524,7 +833,8 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 						}
 
 						uint32_t platform = 0;
-						if (WIOKit::getOSDataValue(obj, "AAPL,ig-platform-id", platform)) {
+						if (WIOKit::getOSDataValue(obj, "AAPL,ig-platform-id", platform) ||
+							WIOKit::getOSDataValue(obj, "AAPL,snb-platform-id", platform)) {
 							connectorLessFrame = CPUInfo::isConnectorLessPlatformId(platform);
 						} else {
 							// Setting a default platform id instead of letting it to be fallen back to appears to improve boot speed for whatever reason.
@@ -535,21 +845,52 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 						}
 
 						foundIGPU = true;
-					} else if (!foundIMEI) {
+						continue;
+					}
+
+					// PCI bridge
+					if (code == 0x60400) {
+						DBGLOG("igfx", "found pci bridge %s", name ? name : "(unnamed)");
+						auto gpuiterator = IORegistryIterator::iterateOver(obj, gIOServicePlane, kIORegistryIterateRecursively);
+						if (gpuiterator) {
+							IORegistryEntry *gpuobj = nullptr;
+							while ((gpuobj = OSDynamicCast(IORegistryEntry, gpuiterator->getNextObject())) != nullptr) {
+								uint32_t gpuvendor = 0, gpucode = 0;
+								auto gpuname = gpuobj->getName();
+								DBGLOG("igfx", "found %s on pci bridge", gpuname ? gpuname : "(unnamed)");
+								if (WIOKit::getOSDataValue(gpuobj, "vendor-id", gpuvendor) &&
+									WIOKit::getOSDataValue(gpuobj, "class-code", gpucode) &&
+									(gpucode == 0x38000 || gpucode == 0x30000)) {
+									if (gpuvendor == WIOKit::VendorID::ATIAMD) {
+										DBGLOG("igfx", "found AMD GPU device %s", gpuname);
+										hasExternalAMD = true;
+										break;
+									} else if (gpuvendor == WIOKit::VendorID::NVIDIA) {
+										DBGLOG("igfx", "found NVIDIA GPU device %s", gpuname);
+										hasExternalNVIDIA = true;
+										break;
+									}
+								}
+							}
+
+							gpuiterator->release();
+						}
+					}
+
+					if (!foundIMEI) {
+						// Fortunately IMEI is always made by Intel
 						bool correctName = name && !strcmp(name, "IMEI");
 						if (correctName) {
 							// IMEI is just right
 							foundIMEI = true;
 						} else if (!correctName && (code == 0x78000 || !strcmp(name, "HECI") || !strcmp(name, "MEI"))) {
-							// IMEI is improperly named or unnamed!
+							// IMEI is improperly named or unnamed! 0x78000 is implementation defined, but works on HSW so far.
 							DBGLOG("igfx", "found invalid Intel ME device %s", name ? name : "(null)");
 							WIOKit::renameDevice(obj, "IMEI");
 							foundIMEI = true;
 						}
 					}
 				}
-				if (foundIMEI && foundIGPU)
-					break;
 			}
 			iterator->release();
 		}
@@ -673,6 +1014,27 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		SYSLOG("igfx", "failed to resolve __ZN5IGGuC11initGucCtrlEPV9IGGucCtrl");
 	}
 
+	auto initIntr = patcher.solveSymbol(index, "__ZN5IGGuC21initInterruptServicesEv");
+	if (initIntr) {
+		DBGLOG("igfx", "obtained __ZN5IGGuC21initInterruptServicesEv");
+		patcher.clearError();
+		orgInitInterruptServices = reinterpret_cast<t_init_intr_services>(patcher.routeFunction(initIntr, reinterpret_cast<mach_vm_address_t>(initInterruptServices), true));
+		if (patcher.getError() == KernelPatcher::Error::NoError) {
+			DBGLOG("igfx", "routed __ZN5IGGuC21initInterruptServicesEv");
+		} else {
+			SYSLOG("igfx", "failed to route __ZN5IGGuC21initInterruptServicesEv");
+		}
+	} else {
+		SYSLOG("igfx", "failed to resolve __ZN5IGGuC21initInterruptServicesEv");
+	}
+
+	orgSafeForceWake =  reinterpret_cast<t_safe_force_wake>(patcher.solveSymbol(index, "__ZN16IntelAccelerator13SafeForceWakeEbj"));
+	if (orgSafeForceWake) {
+		DBGLOG("igfx", "obtained __ZN16IntelAccelerator13SafeForceWakeEbj");
+	} else {
+		SYSLOG("igfx", "failed to resolve __ZN16IntelAccelerator13SafeForceWakeEbj");
+	}
+
 	auto dmaMap = patcher.solveSymbol(index, "__ZN5IGGuC12dmaHostToGuCEyjjNS_12IGGucDmaTypeEb");
 	if (dmaMap) {
 		DBGLOG("igfx", "obtained __ZN5IGGuC12dmaHostToGuCEyjjNS_12IGGucDmaTypeEb");
@@ -695,117 +1057,84 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 				DBGLOG("igfx", "found %s (%d)", kextList[i].id, progressState);
 
 				if (!(progressState & ProcessingState::CallbackPavpSessionRouted) &&
-					(i == KextHD5000Graphics || i == KextSKLGraphics || i == KextKBLGraphics)) {
-					auto sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
+					(i == KextHD3000Graphics || i == KextHD4000Graphics || i == KextHD5000Graphics ||
+					 i == KextBDWGraphics || i == KextSKLGraphics || i == KextKBLGraphics)) {
+					mach_vm_address_t sessionCallback = 0;
+					if (i == KextHD3000Graphics)
+						sessionCallback = patcher.solveSymbol(index, "__ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+					else if (i == KextHD4000Graphics)
+						sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+					else
+						sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
 					if (sessionCallback) {
-						DBGLOG("igfx", "obtained __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
+						DBGLOG("igfx", "obtained PAVPCommandCallback");
 						patcher.clearError();
 						orgPavpSessionCallback = reinterpret_cast<t_pavp_session_callback>(patcher.routeFunction(sessionCallback, reinterpret_cast<mach_vm_address_t>(pavpSessionCallback), true));
-						if (patcher.getError() == KernelPatcher::Error::NoError) {
-							DBGLOG("igfx", "routed __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
-							progressState |= ProcessingState::CallbackPavpSessionRouted;
-						} else {
-							SYSLOG("igfx", "failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
-						}
+						if (patcher.getError() == KernelPatcher::Error::NoError)
+							DBGLOG("igfx", "routed PAVPCommandCallback");
+						else
+							SYSLOG("igfx", "failed to route PAVPCommandCallback");
 					} else {
-						SYSLOG("igfx", "failed to resolve __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
+						SYSLOG("igfx", "failed to resolve PAVPCommandCallback");
 					}
-				}
-
-				if (!(progressState & ProcessingState::CallbackPavpSessionHD3000Routed) && i == KextHD3000Graphics) {
-					auto sessionCallbackHD3000 = patcher.solveSymbol(index, "__ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-					if (sessionCallbackHD3000) {
-						DBGLOG("igfx", "obtained __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-						patcher.clearError();
-						orgPavpSessionCallback = reinterpret_cast<t_pavp_session_callback>(patcher.routeFunction(sessionCallbackHD3000, reinterpret_cast<mach_vm_address_t>(pavpSessionCallback), true));
-						if (patcher.getError() == KernelPatcher::Error::NoError) {
-							DBGLOG("igfx", "routed __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-							progressState |= ProcessingState::CallbackPavpSessionHD3000Routed;
-						} else {
-							SYSLOG("igfx", "failed to route __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-						}
-					} else {
-						SYSLOG("igfx", "failed to resolve __ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-					}
-				}
-
-				if (!(progressState & ProcessingState::CallbackPavpSessionHD4000Routed) && i == KextHD4000Graphics) {
-					auto sessionCallbackHD4000 = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-					if (sessionCallbackHD4000) {
-						DBGLOG("igfx", "obtained __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-						patcher.clearError();
-						orgPavpSessionCallback = reinterpret_cast<t_pavp_session_callback>(patcher.routeFunction(sessionCallbackHD4000, reinterpret_cast<mach_vm_address_t>(pavpSessionCallback), true));
-						if (patcher.getError() == KernelPatcher::Error::NoError) {
-							DBGLOG("igfx", "routed __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-							progressState |= ProcessingState::CallbackPavpSessionHD4000Routed;
-						} else {
-							SYSLOG("igfx", "failed to route __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-						}
-					} else {
-						SYSLOG("igfx", "failed to resolve __ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
-					}
+					progressState |= ProcessingState::CallbackPavpSessionRouted;
 				}
 
 				if (!(progressState & ProcessingState::CallbackFrameBufferInitRouted) && i == KextIOGraphicsFamily) {
-					if (getKernelVersion() >= KernelVersion::Yosemite) {
-						gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
-						if (gIOFBVerboseBootPtr) {
-							DBGLOG("igfx", "obtained __ZL16gIOFBVerboseBoot");
-							auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
-							if (ioFramebufferinit) {
-								DBGLOG("igfx", "obtained __ZN13IOFramebuffer6initFBEv");
-								patcher.clearError();
-								orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
-								if (patcher.getError() == KernelPatcher::Error::NoError) {
-									DBGLOG("igfx", "routed __ZN13IOFramebuffer6initFBEv");
-									progressState |= ProcessingState::CallbackFrameBufferInitRouted;
-								} else {
-									SYSLOG("igfx", "failed to route __ZN13IOFramebuffer6initFBEv");
-								}
-							}
-						} else {
-							SYSLOG("igfx", "failed to resolve __ZL16gIOFBVerboseBoot");
+					gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
+					if (gIOFBVerboseBootPtr) {
+						DBGLOG("igfx", "obtained gIOFBVerboseBoot");
+						auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
+						if (ioFramebufferinit) {
+							DBGLOG("igfx", "obtained IOFramebuffer::initFB");
+							patcher.clearError();
+							orgFrameBufferInit = reinterpret_cast<t_frame_buffer_init>(patcher.routeFunction(ioFramebufferinit, reinterpret_cast<mach_vm_address_t>(frameBufferInit), true));
+							if (patcher.getError() == KernelPatcher::Error::NoError)
+								DBGLOG("igfx", "routed IOFramebuffer::initFB");
+							else
+								SYSLOG("igfx", "failed to route IOFramebuffer::initFB");
 						}
 					} else {
-						progressState |= ProcessingState::CallbackFrameBufferInitRouted;
+						SYSLOG("igfx", "failed to resolve gIOFBVerboseBoot");
 					}
+					progressState |= ProcessingState::CallbackFrameBufferInitRouted;
 				}
 
-				if (!(progressState & ProcessingState::CallbackComputeLaneCountRouted) && (i == KextSKLGraphicsFramebuffer || i == KextKBLGraphicsFramebuffer)) {
-					DBGLOG("igfx", "found %s", kextList[i].id);
-					auto compute_lane_count = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
-					if (compute_lane_count) {
+				if (!(progressState & ProcessingState::CallbackComputeLaneCountRouted) &&
+					(i == KextSKLGraphicsFramebuffer || i == KextKBLGraphicsFramebuffer)) {
+					auto compLane = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
+					if (compLane) {
 						DBGLOG("igfx", "obtained ComputeLaneCount");
 						patcher.clearError();
-						orgComputeLaneCount = reinterpret_cast<t_compute_lane_count>(patcher.routeFunction(compute_lane_count, reinterpret_cast<mach_vm_address_t>(computeLaneCount), true));
-						if (patcher.getError() == KernelPatcher::Error::NoError) {
+						orgComputeLaneCount = reinterpret_cast<t_compute_lane_count>(patcher.routeFunction(compLane, reinterpret_cast<mach_vm_address_t>(computeLaneCount), true));
+						if (patcher.getError() == KernelPatcher::Error::NoError)
 							DBGLOG("igfx", "routed ComputeLaneCount");
-							progressState |= ProcessingState::CallbackComputeLaneCountRouted;
-						} else {
+						else
 							SYSLOG("igfx", "failed to route ComputeLaneCount");
-						}
 					} else {
 						SYSLOG("igfx", "failed to resolve ComputeLaneCount");
 					}
+
+					progressState |= ProcessingState::CallbackComputeLaneCountRouted;
 				}
 
 				if (!(progressState & ProcessingState::CallbackDriverStartRouted) &&
-					(i == KextHD3000Graphics || i == KextHD4000Graphics || i == KextHD5000Graphics || i == KextSKLGraphics || i == KextKBLGraphics)) {
-
-					auto acceleratorStart = patcher.solveSymbol(index, "__ZN16IntelAccelerator5startEP9IOService");
+					(i == KextHD3000Graphics || i == KextHD4000Graphics || i == KextHD5000Graphics ||
+					 i == KextBDWGraphics || i == KextSKLGraphics || i == KextKBLGraphics)) {
+					auto acceleratorStart = patcher.solveSymbol(index, i == KextHD3000Graphics ?
+							"__ZN15Gen6Accelerator5startEP9IOService" : "__ZN16IntelAccelerator5startEP9IOService");
 					if (acceleratorStart) {
-						DBGLOG("igfx", "obtained IntelAccelerator::start");
+						DBGLOG("igfx", "obtained Accelerator::start");
 						patcher.clearError();
 						orgGraphicsStart = reinterpret_cast<t_intel_graphics_start>(patcher.routeFunction(acceleratorStart, reinterpret_cast<mach_vm_address_t>(intelGraphicsStart), true));
-						if (patcher.getError() == KernelPatcher::Error::NoError) {
-							DBGLOG("igfx", "routed IntelAccelerator::start");
-							progressState |= ProcessingState::CallbackDriverStartRouted;
-						} else {
-							SYSLOG("igfx", "failed to route IntelAccelerator::start");
-						}
+						if (patcher.getError() == KernelPatcher::Error::NoError)
+							DBGLOG("igfx", "routed Accelerator::start");
+						else
+							SYSLOG("igfx", "failed to route Accelerator::start");
 					} else {
-						SYSLOG("igfx", "failed to resolve IntelAccelerator::start");
+						SYSLOG("igfx", "failed to resolve Accelerator::start");
 					}
+					progressState |= ProcessingState::CallbackDriverStartRouted;
 				}
 
 				if (!(progressState & ProcessingState::CallbackGuCFirmwareUpdateRouted) && (i == KextSKLGraphics || i == KextKBLGraphics)) {
