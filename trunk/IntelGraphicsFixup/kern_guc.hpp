@@ -5,8 +5,8 @@
 //  Copyright © 2018 lvs1974. All rights reserved.
 //
 
-#ifndef kern_guc_h
-#define kern_guc_h
+#ifndef kern_guc_hpp
+#define kern_guc_hpp
 
 #include <libkern/libkern.h>
 
@@ -29,4 +29,4 @@ extern const uint8_t *HuCFirmwareKBL;
 extern const uint8_t *HuCFirmwareKBLSignature;
 extern const size_t HuCFirmwareKBLSize;
 
-#endif /* kern_guc_h */
+#endif /* kern_guc_hpp */

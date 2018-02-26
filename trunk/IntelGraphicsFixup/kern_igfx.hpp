@@ -100,14 +100,16 @@ private:
 	/**
 	 *  IGSharedMappedBuffer::getGPUVirtualAddress callback type
 	 */
-	using t_ig_get_gpu_vaddr = void *(*)(void *that);
+	using t_ig_get_gpu_vaddr = uint64_t (*)(void *that);
 
 	/**
 	 *  IGGuC::dmaHostToGuC callback type (we use it to correct the sizes)
 	 */
 	using t_dma_host_to_guc = bool (*)(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType, bool unk);
 
-	using t_send_message = bool (*)(void *that, void *message, unsigned int reg);
+	using t_init_intr_services = void (*)(void *that);
+
+	using t_safe_force_wake = void (*)(void *that, bool a, uint32_t b);
 
 	/**
 	 *  Hooked methods / callbacks
@@ -123,8 +125,25 @@ private:
 	static void systemDidWake(IOService *that);
 	static bool initSchedControl(void *that, void *ctrl);
 	static void *igBufferWithOptions(void *accelTask, unsigned long size, unsigned int type, unsigned int flags);
-	static void *igBufferGetGpuVirtualAddress(void *that);
+	static uint64_t igBufferGetGpuVirtualAddress(void *that);
 	static bool dmaHostToGuC(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType, bool unk);
+	static void initInterruptServices(void *that);
+
+	template <typename T>
+	static T getMember(void *that, size_t off) {
+		return *reinterpret_cast<T *>(static_cast<uint8_t *>(that) + off);
+	}
+
+	template <typename T>
+	static T pageAlign(T size) {
+		return (size + page_size - 1) & (~(page_size - 1));
+	}
+
+	static uint32_t mmioRead(void *fw, uint32_t reg);
+	static void mmioWrite(void *fw, uint32_t reg, uint32_t v);
+	static bool doDmaTransfer(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType);
+	static void resetFirmware(void *that);
+	bool loadCustomBinary(void *that, bool restore);
 
 	/**
 	 *  Trampolines for original method invocations
@@ -139,6 +158,8 @@ private:
 	t_ig_buffer_with_options orgIgBufferWithOptions {nullptr};
 	t_ig_get_gpu_vaddr orgIgGetGpuVirtualAddress {nullptr};
 	t_dma_host_to_guc orgDmaHostToGuC {nullptr};
+	t_init_intr_services orgInitInterruptServices {nullptr};
+	t_safe_force_wake orgSafeForceWake {nullptr};
 
 	/**
 	 *  External global variables
@@ -165,7 +186,8 @@ private:
 		BasicScheduler = 0,
 		ReferenceScheduler = 1,
 		AppleScheduler = 2,
-		TotalSchedulers = 3
+		AppleCustomScheduler = 3,
+		TotalSchedulers = 4
 	};
 
 	/**
@@ -213,6 +235,16 @@ private:
 	bool connectorLessFrame {false};
 
 	/**
+	 *  External GPU status
+	 */
+	bool hasExternalNVIDIA {false};
+
+	/**
+	 *  External GPU status
+	 */
+	bool hasExternalAMD {false};
+
+	/**
 	 *  Loaded vinfo
 	 */
 	vc_info vinfo {};
@@ -236,6 +268,11 @@ private:
 	 *  Actual firmware buffer we store our new firmware in
 	 */
 	uint8_t *realFirmwareBuffer[4] {};
+
+	/**
+	 *  Actual firmware address for GPU DMA
+	 */
+	uint64_t gpuFirmwareAddress[4] {};
 
 	/**
 	 *  Actual intercepted binary sizes
@@ -276,15 +313,11 @@ private:
 		enum {
 			NothingReady = 0,
 			CallbackPavpSessionRouted = 1,
-			CallbackPavpSessionHD3000Routed = 2,
-			CallbackPavpSessionHD4000Routed = 4,
-			CallbackFrameBufferInitRouted = 8,
-			CallbackComputeLaneCountRouted = 16,
-			CallbackDriverStartRouted = 32,
-			CallbackGuCFirmwareUpdateRouted = 64,
+			CallbackFrameBufferInitRouted = 2,
+			CallbackComputeLaneCountRouted = 4,
+			CallbackDriverStartRouted = 8,
+			CallbackGuCFirmwareUpdateRouted = 16,
 			EverythingDone = CallbackPavpSessionRouted |
-				CallbackPavpSessionHD3000Routed |
-				CallbackPavpSessionHD4000Routed |
 				CallbackFrameBufferInitRouted |
 				CallbackComputeLaneCountRouted |
 				CallbackDriverStartRouted |
