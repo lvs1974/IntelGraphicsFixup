@@ -118,7 +118,6 @@ private:
 	static void frameBufferInit(void *that);
 	static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
 	static bool intelGraphicsStart(IOService *that, IOService *provider);
-	static bool canLoadFirmware(void *that, void *accelerator);
 	static bool loadGuCBinary(void *that, bool flag);
 	static bool loadFirmware(IOService *that);
 	static void systemWillSleep(IOService *that);
@@ -168,6 +167,10 @@ private:
 	uint8_t *gKmGen9GuCBinary {nullptr};
 	uint8_t *canUseSpringboard {nullptr};
 
+	/**
+	 *  FBRESET enforces -v like usual patch.
+	 *  FBCOPY  enforces screen copy.
+	 */
 	enum FramebufferFixMode {
 		FBDEFAULT  = 0,
 		FBRESET    = 1,
