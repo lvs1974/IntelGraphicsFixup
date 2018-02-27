@@ -889,6 +889,15 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 							WIOKit::renameDevice(obj, "IMEI");
 							foundIMEI = true;
 						}
+
+						// We need to correct SNB IMEI device-id on 7-series motherboards.
+						uint32_t device = 0;
+						if (foundIMEI && cpuGeneration == CPUInfo::CpuGeneration::SandyBridge &&
+							WIOKit::getOSDataValue(obj, "device-id", device) && device != 0x1c3a) {
+							DBGLOG("igfx", "fixing Intel ME device id 0x%04X to 0x1c3a", device);
+							device = 0x1c3a;
+							obj->setProperty("device-id", &device, sizeof(device));
+						}
 					}
 				}
 			}
