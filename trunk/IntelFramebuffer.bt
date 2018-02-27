@@ -219,8 +219,8 @@ struct ConnectorInfo {
      * - GMBUS_PIN_DPD    (6)  HDMID
      * - GMBUS_PIN_VGADDC (2)  VGA until Broadwell inclusive.
      * So basically you could use 4, 5, 6 for arbitrary HDMI or DisplayPort displays.
-     * Since 5 supports SVDO (https://en.wikipedia.org/wiki/Serial_Digital_Video_Out), it may also be used to support DVI displays.
-     * Starting with Skylake VGA works via SVDO too (instead of a dedicated GMBUS_PIN_VGADDC id).
+     * Since 5 supports SDVO (https://en.wikipedia.org/wiki/Serial_Digital_Video_Out), it may also be used to support DVI displays.
+     * Starting with Skylake VGA works via SDVO too (instead of a dedicated GMBUS_PIN_VGADDC id).
      */
     uint8_t busId;
     /* Appears to be used for grouping ports just like Piker says, but I cannot find the usage. */
