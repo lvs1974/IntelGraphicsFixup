@@ -10,6 +10,7 @@
 
 #include <Headers/kern_patcher.hpp>
 #include <Headers/kern_cpu.hpp>
+#include <Headers/kern_iokit.hpp>
 
 class IGFX {
 public:
@@ -49,6 +50,14 @@ private:
 	 *  @param index   kinfo handle
 	 */
 	void loadIGGuCPatches(KernelPatcher &patcher, size_t index);
+
+	/**
+	 *  Inject IGPU properties and hooks
+	 *
+	 *  @param obj   IGPU device
+	 *  @param name  IGPU device name
+	 */
+	void injectGraphicsProperties(IORegistryEntry *obj, const char *name);
 
 	/**
 	 *  PAVP session command type
@@ -128,15 +137,11 @@ private:
 	static bool dmaHostToGuC(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType, bool unk);
 	static void initInterruptServices(void *that);
 
-	template <typename T>
-	static T getMember(void *that, size_t off) {
-		return *reinterpret_cast<T *>(static_cast<uint8_t *>(that) + off);
-	}
-
-	template <typename T>
-	static T pageAlign(T size) {
-		return (size + page_size - 1) & (~(page_size - 1));
-	}
+	/**
+	 *  IGPU PCI Config device-id faking wrappers
+	 */
+	static uint16_t configRead16(IORegistryEntry *service, uint32_t space, uint8_t offset);
+	static uint32_t configRead32(IORegistryEntry *service, uint32_t space, uint8_t offset);
 
 	static uint32_t mmioRead(void *fw, uint32_t reg);
 	static void mmioWrite(void *fw, uint32_t reg, uint32_t v);
@@ -159,6 +164,13 @@ private:
 	t_dma_host_to_guc orgDmaHostToGuC {nullptr};
 	t_init_intr_services orgInitInterruptServices {nullptr};
 	t_safe_force_wake orgSafeForceWake {nullptr};
+
+	/**
+	 *  Original IGPU PCI Config readers
+	 */
+	WIOKit::t_PCIConfigRead16 orgConfigRead16 {nullptr};
+	WIOKit::t_PCIConfigRead32 orgConfigRead32 {nullptr};
+
 
 	/**
 	 *  External global variables

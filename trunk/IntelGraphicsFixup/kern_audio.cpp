@@ -6,6 +6,7 @@
 //
 
 #include <Headers/kern_iokit.hpp>
+#include <Headers/kern_cpu.hpp>
 #include <Headers/plugin_start.hpp>
 
 #include "kern_audio.hpp"
@@ -16,7 +17,8 @@ uint32_t IntelGraphicsAudio::getAnalogLayout() {
 	// For some DP monitors layout-id value should match HDEF layout-id
 	// If we have HDEF properly configured, get the value
 	static uint32_t layout = 0;
-	
+
+	//FIXME: rework this to look in all Intel audio devices, since HDEF renaming may happen later!
 	if (!layout) {
 		const char *tree[] {"AppleACPIPCI", "HDEF"};
 		auto sect = WIOKit::findEntryByPrefix("/AppleACPIPlatformExpert", "PCI", gIOServicePlane);
@@ -65,38 +67,49 @@ IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
 		return nullptr;
 	}
 
-	// Do not mess with HDEF
-	bool mislabeled = !hdaPlaneName || !strcmp(hdaPlaneName, "B0D3");
-	if (!mislabeled && strcmp(hdaPlaneName, "HDAU")) {
+	// HDEF device seems to always exist, so it will be labeled.
+	// However, we will not touch mislabeled HDEF due to VoodooHDA.
+	// AppleALC will rename HDEF properly soon (just need a higher probe score).
+	bool isAppleAnalog = hdaPlaneName && !strcmp(hdaPlaneName, "HDEF");
+	bool isMislabeledDigital = !hdaPlaneName || !strcmp(hdaPlaneName, "B0D3");
+	bool isDigital = isMislabeledDigital || !strcmp(hdaPlaneName, "HDAU");
+
+	if (!isDigital && !isAppleAnalog) {
+		DBGLOG("audio", "found voodoo-like analog audio, ignoring.");
 		return nullptr;
 	}
-	
-	// AppleHDAController only recognises HDEF and HDAU
-	if (mislabeled) {
+
+	// AppleHDAController only recognises HDEF and HDAU.
+	if (isMislabeledDigital) {
 		DBGLOG("audio", "fixing audio plane name to HDAU");
 		WIOKit::renameDevice(hdaService, "HDAU");
 	}
 	
 	// hda-gfx allows to separate the devices, must be unique
-	
+	// WhateverGreen and NvidiaGraphicsFixup use onboard-2 and so on for GFX.
 	if (!hdaService->getProperty("hda-gfx")) {
-		hdaService->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
+		// Haswell and Broadwell have a dedicated device for digital audio source.
+		auto gen = CPUInfo::getGeneration();
+		if (gen == CPUInfo::CpuGeneration::Haswell || gen == CPUInfo::CpuGeneration::Broadwell)
+			hdaService->setProperty("hda-gfx", OSData::withBytes("built-in", sizeof("built-in")));
+		else
+			hdaService->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
 	} else {
-		DBGLOG("audio", "existing hda-gfx in hdau, assuming complete inject");
+		DBGLOG("audio", "existing hda-gfx, assuming complete inject");
 	}
-	
+
 	// layout-id is heard to be required in rare cases
-	
-	if (!hdaService->getProperty("layout-id")) {
-		DBGLOG("audio", "fixing layout-id in hdau");
-		uint32_t layout = getAnalogLayout();
-		hdaService->setProperty("layout-id", OSData::withBytes(&layout, sizeof(layout)));
-	} else {
-		DBGLOG("audio", "found existing layout-id in hdau");
+	if (!isAppleAnalog) {
+		if (!hdaService->getProperty("layout-id")) {
+			DBGLOG("audio", "fixing layout-id in hdau");
+			uint32_t layout = getAnalogLayout();
+			hdaService->setProperty("layout-id", OSData::withBytes(&layout, sizeof(layout)));
+		} else {
+			DBGLOG("audio", "found existing layout-id in hdau");
+		}
 	}
-	
+
 	// built-in is required for non-renamed devices
-	
 	if (!hdaService->getProperty("built-in")) {
 		DBGLOG("audio", "fixing built-in in hdau");
 		uint8_t builtBytes[] { 0x01, 0x00, 0x00, 0x00 };

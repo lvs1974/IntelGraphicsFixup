@@ -5,119 +5,131 @@
 //  Copyright © 2018 lvs1974. All rights reserved.
 //
 
-#include <stdint.h>
+#include <Headers/kern_util.hpp>
 
 #include "kern_model.hpp"
 
-const char *getModelName(uint32_t device) {
-	switch (device) {
-		case 0x0106:
-		case 0x0601:
-		case 0x0102:
-			return "Intel HD Graphics 2000";
-		case 0x0116:
-		case 0x0126:
-			return "Intel HD Graphics 3000";
-		case 0x0152:
-		case 0x0156:
-			return "Intel HD Graphics 2500";
-		case 0x0162:
-		case 0x0166:
-			return "Intel HD Graphics 4000";
-		case 0x0d26:
-		case 0x0d22:
-			return "Intel Iris Pro Graphics 5200";
-		case 0x0a26:
-			return "Intel HD Graphics 5000";
-		case 0x0a2e:
-			return "Intel Iris Graphics 5100";
-		case 0x0412:
-			return "Intel HD Graphics 4600";
-		case 0x1612:
-			return "Intel HD Graphics 5600";
-		case 0x1616:
-			return "Intel HD Graphics 5500";
-		case 0x161E:
-			return "Intel HD Graphics 5300";
-		case 0x1622:
-			return "Intel Iris Pro Graphics 6200";
-		case 0x1626:
-			return "Intel HD Graphics 6000";
-		case 0x162B:
-			return "Intel Iris Graphics 6100";
-		case 0x162A:
-		case 0x162D:
-			return "Intel Iris Pro Graphics P6300";
-		// Reserved/unused/generic Broadwell
-		case 0x0BD1:
-		case 0x0BD2:
-		case 0x0BD3:
-		case 0x1602:
-		case 0x1606:
-		case 0x160B:
-		case 0x160A:
-		case 0x160D:
-		case 0x160E:
-		case 0x161B:
-		case 0x161A:
-		case 0x161D:
-		case 0x162E:
-		case 0x1632:
-		case 0x1636:
-		case 0x163B:
-		case 0x163A:
-		case 0x163D:
-		case 0x163E:
-			return nullptr;
-		case 0x1902:
-		case 0x1906:
-		case 0x190B:
-			return "Intel HD Graphics 510";
-		case 0x191E:
-			return "Intel HD Graphics 515";
-		case 0x1916:
-		case 0x1921:
-			return "Intel HD Graphics 520";
-		case 0x1912:
-		case 0x191B:
-			return "Intel HD Graphics 530";
-		case 0x1926:
-			return "Intel Iris Graphics 540";
-		case 0x1927:
-			return "Intel Iris Graphics 550";
-		case 0x192B:
-			return "Intel Iris Graphics 555";
-		case 0x1932:
-		case 0x193B:
-			return "Intel Iris Pro Graphics 580";
-		// Reserved/unused/generic Skylake
-		case 0x0901:
-		case 0x0902:
-		case 0x0903:
-		case 0x0904:
-		case 0x190E:
-		case 0x1913:
-		case 0x1915:
-		case 0x1917:
-			return nullptr;
-		case 0x591E:
-			return "Intel HD Graphics 615";
-		case 0x5916:
-			return "Intel HD Graphics 620";
-		case 0x5912:
-		case 0x591B:
-			return "Intel HD Graphics 630";
-		case 0x5926:
-			return "Intel Iris Plus Graphics 640";
-		case 0x5927:
-			return "Intel Iris Plus Graphics 650";
-		case 0x3E92:
-			return "Intel UHD Graphics 630";
-		// Reserved/unused/generic Kaby Lake / Coffee Lake
-		case 0x3E9B:
-		case 0x3EA5:
-			return nullptr;
-		default:
-			return nullptr;
+struct DeviceModel {
+	uint32_t device;
+	uint32_t fake;
+	const char *name;
+};
+
+static DeviceModel deviceModels[] {
+	// For Sandy only 0x0116 and 0x0126 controllers are properly supported by AppleIntelSNBGraphicsFB.
+	// 0x0102 and 0x0106 are implemented as AppleIntelSNBGraphicsController/AppleIntelSNBGraphicsController2.
+	// AppleIntelHD3000Graphics actually supports more (0x0106, 0x0601, 0x0102, 0x0116, 0x0126).
+	// To make sure we have at least acceleration we fake unsupported ones as 0x0102.
+	// 0x0106 is likely a typo from 0x0106 or a fulty device (AppleIntelHD3000Graphics)
+	{ 0x0106, 0x0000, "Intel HD Graphics 2000" },
+	{ 0x0601, 0x0106, "Intel HD Graphics 2000" },
+	{ 0x0102, 0x0000, "Intel HD Graphics 2000" },
+	{ 0x0112, 0x0116, "Intel HD Graphics 3000" },
+	{ 0x0116, 0x0000, "Intel HD Graphics 3000" },
+	{ 0x0122, 0x0126, "Intel HD Graphics 3000" },
+	{ 0x0126, 0x0000, "Intel HD Graphics 3000" },
+	{ 0x0152, 0x0000, "Intel HD Graphics 2500" },
+	{ 0x015A, 0x0152, "Intel HD Graphics P2500" },
+	{ 0x0156, 0x0000, "Intel HD Graphics 2500" },
+	{ 0x0162, 0x0000, "Intel HD Graphics 4000" },
+	{ 0x016A, 0x0162, "Intel HD Graphics P4000" },
+	{ 0x0166, 0x0000, "Intel HD Graphics 4000" },
+	{ 0x0D26, 0x0000, "Intel Iris Pro Graphics 5200" },
+	{ 0x0D22, 0x0000, "Intel Iris Pro Graphics 5200" },
+	{ 0x0D2A, 0x0000, "Intel Iris Pro Graphics 5200" },
+	{ 0x0D2B, 0x0000, "Intel Iris Pro Graphics 5200" },
+	{ 0x0D2E, 0x0000, "Intel Iris Pro Graphics 5200" },
+	{ 0x0A26, 0x0000, "Intel HD Graphics 5000" },
+	{ 0x0A2A, 0x0A2E, "Intel Iris Graphics 5100" },
+	{ 0x0A2B, 0x0A2E, "Intel Iris Graphics 5100" },
+	{ 0x0A2E, 0x0000, "Intel Iris Graphics 5100" },
+	{ 0x0412, 0x0000, "Intel HD Graphics 4600" },
+	{ 0x0416, 0x0412, "Intel HD Graphics 4600" },
+	{ 0x041A, 0x0412, "Intel HD Graphics P4600" },
+	{ 0x041B, 0x0412, nullptr },
+	{ 0x041E, 0x0412, "Intel HD Graphics 4400" },
+	{ 0x0A12, 0x0412, nullptr },
+	{ 0x0A16, 0x0412, "Intel HD Graphics 4400" },
+	{ 0x0A1A, 0x0412, nullptr },
+	{ 0x0A1E, 0x0412, "Intel HD Graphics 4200" },
+	{ 0x0A22, 0x0A2E, "Intel Iris Graphics 5100" },
+	{ 0x0D12, 0x0412, "Intel HD Graphics 4600" },
+	{ 0x0D16, 0x0412, "Intel HD Graphics 4600" },
+	{ 0x1612, 0x0000, "Intel HD Graphics 5600" },
+	{ 0x1616, 0x0000, "Intel HD Graphics 5500" },
+	{ 0x161E, 0x0000, "Intel HD Graphics 5300" },
+	{ 0x1622, 0x0000, "Intel Iris Pro Graphics 6200" },
+	{ 0x1626, 0x0000, "Intel HD Graphics 6000" },
+	{ 0x162B, 0x0000, "Intel Iris Graphics 6100" },
+	{ 0x162A, 0x0000, "Intel Iris Pro Graphics P6300" },
+	{ 0x162D, 0x0000, "Intel Iris Pro Graphics P6300" },
+	// Reserved/unused/generic Broadwell },
+	// { 0x0BD1, 0x0000, nullptr },
+	// { 0x0BD2, 0x0000, nullptr },
+	// { 0x0BD3, 0x0000, nullptr },
+	// { 0x1602, 0x0000, nullptr },
+	// { 0x1606, 0x0000, nullptr },
+	// { 0x160B, 0x0000, nullptr },
+	// { 0x160A, 0x0000, nullptr },
+	// { 0x160D, 0x0000, nullptr },
+	// { 0x160E, 0x0000, nullptr },
+	// { 0x161B, 0x0000, nullptr },
+	// { 0x161A, 0x0000, nullptr },
+	// { 0x161D, 0x0000, nullptr },
+	// { 0x162E, 0x0000, nullptr },
+	// { 0x1632, 0x0000, nullptr },
+	// { 0x1636, 0x0000, nullptr },
+	// { 0x163B, 0x0000, nullptr },
+	// { 0x163A, 0x0000, nullptr },
+	// { 0x163D, 0x0000, nullptr },
+	// { 0x163E, 0x0000, nullptr },
+	{ 0x1902, 0x0000, "Intel HD Graphics 510" },
+	{ 0x1906, 0x0000, "Intel HD Graphics 510" },
+	{ 0x190B, 0x0000, "Intel HD Graphics 510" },
+	{ 0x191E, 0x0000, "Intel HD Graphics 515" },
+	{ 0x1916, 0x0000, "Intel HD Graphics 520" },
+	{ 0x1921, 0x0000, "Intel HD Graphics 520" },
+	{ 0x1912, 0x0000, "Intel HD Graphics 530" },
+	{ 0x191B, 0x0000, "Intel HD Graphics 530" },
+	{ 0x191D, 0x191B, "Intel HD Graphics P530" },
+	{ 0x1923, 0x191B, "Intel HD Graphics 535" },
+	{ 0x1926, 0x0000, "Intel Iris Graphics 540" },
+	{ 0x1927, 0x0000, "Intel Iris Graphics 550" },
+	{ 0x192B, 0x0000, "Intel Iris Graphics 555" },
+	{ 0x192D, 0x1927, "Intel Iris Graphics P555" },
+	{ 0x1932, 0x0000, "Intel Iris Pro Graphics 580" },
+	{ 0x193A, 0x193B, "Intel Iris Pro Graphics P580" },
+	{ 0x193B, 0x0000, "Intel Iris Pro Graphics 580" },
+	{ 0x193D, 0x193B, "Intel Iris Pro Graphics P580" },
+	// Reserved/unused/generic Skylake },
+	// { 0x0901, 0x0000, nullptr },
+	// { 0x0902, 0x0000, nullptr },
+	// { 0x0903, 0x0000, nullptr },
+	// { 0x0904, 0x0000, nullptr },
+	// { 0x190E, 0x0000, nullptr },
+	// { 0x1913, 0x0000, nullptr },
+	// { 0x1915, 0x0000, nullptr },
+	// { 0x1917, 0x0000, nullptr },
+	{ 0x591E, 0x0000, "Intel HD Graphics 615" },
+	{ 0x5916, 0x0000, "Intel HD Graphics 620" },
+	{ 0x5912, 0x0000, "Intel HD Graphics 630" },
+	{ 0x591B, 0x0000, "Intel HD Graphics 630" },
+	{ 0x5926, 0x0000, "Intel Iris Plus Graphics 640" },
+	{ 0x5927, 0x0000, "Intel Iris Plus Graphics 650" },
+	{ 0x3E92, 0x0000, "Intel UHD Graphics 630" },
+	// Reserved/unused/generic Kaby Lake / Coffee Lake },
+	// { 0x3E9B, 0x0000, nullptr },
+	// { 0x3EA5, 0x0000, nullptr },
+};
+
+const char *getModelName(uint32_t device, uint32_t &fakeId) {
+	fakeId = 0;
+	for (size_t i = 0; i < arrsize(deviceModels); i++) {
+		if (deviceModels[i].device == device) {
+			fakeId = deviceModels[i].fake;
+			return deviceModels[i].name;
+		}
 	}
+
+	return nullptr;
 }

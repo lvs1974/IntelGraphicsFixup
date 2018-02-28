@@ -30,7 +30,8 @@ typedef int32 int32_t;
 typedef int64 int64_t;
 
 enum <uint32_t> FirstFramebuffer {
-    FirstSandyBridgeId = 0x00040201,
+    FirstSandyBridgeId = 0x00040201, /* note, this is just a marker */
+    DefSandyBridgeId   = 0x00010200, /* note, this is just a marker */
     FirstIvyBridgeId   = 0x01660000,
     FirstHaswellId     = 0x0c060000,
     FirstBroadwellId   = 0x16060000,
@@ -254,17 +255,29 @@ struct FramebufferSNB {
     local uint64_t fModelNameAddr = 0;
 };
 
-uint32_t frameIdFromIndex(uint32_t index) {
-    switch (index) {
-        case 0: return 0x10000;
-        case 1: return 0x20000;
-        case 2: return 0x30010; /* also 0x30020 */
-        case 3: return 0x30030;
-        case 4: return 0x40000;
-        case 5: return 0x50000;
-        /* There are 8 frames for sandy aside the default one, but only the first 6 are addressible. */
-        default:return 0xFFFFFFFF;
+string frameIdFromIndex(uint32_t frame, uint32_t index) {
+    local string out;
+    if (frame != 0) {
+       /* Ivy and newer */
+       SPrintf(out, "%08X", frame);
+    } else {
+        /* Sandy Bridge has stupid frame detection logic.
+         * See board-id list below, which enable framebuffer fallbacks.
+         */
+        switch (index) {
+            case 0: out="SNB0 0x10000"; break;
+            case 1: out="SNB1 0x20000"; break;
+            case 2: out="SNB2 0x30010 or 0x30020"; break;
+            case 3: out="SNB3 0x30030"; break;
+            case 4: out="SNB4 0x40000"; break;
+            case 5: out="SNB5 0x50000"; break;
+            case 6: out="SNB6 Not addressible"; break;
+            case 7: out="SNB7 Not addressible"; break;
+            /* There are 8 frames for sandy aside the default one, but only the first 6 are addressible. */
+            default: out="Error";
+        }
     }
+    return out;
 }
 
 struct FramebufferIVB {
@@ -508,7 +521,7 @@ while (pos < size) {
         /* Skylake and Kaby Lake share the struct as of 10.13.3 */
         else if (firstId == FirstSkylakeId || firstId == FirstKabyLakeId)
             FramebufferSKL frames <optimize=false, read=framebufferSKLToPrintable>;
-        Printf("ID: 0x%08X, DVMT: %s, FBMEM: %s, VRAM: %s, Flags: 0x%08X\n", frames[i].framebufferId == 0 ? frameIdFromIndex(i) : frames[i].framebufferId,
+        Printf("ID: %s, DVMT: %s, FBMEM: %s, VRAM: %s, Flags: 0x%08X\n", frameIdFromIndex(frames[i].framebufferId, i),
             bytesToPrintable(frames[i].fStolenMemorySize), bytesToPrintable(frames[i].fFramebufferMemorySize), bytesToPrintable(frames[i].fUnifiedMemorySize),
             firstId == FirstSandyBridgeId || firstId == FirstIvyBridgeId ? 0 : frames[i].flags.value);
         if (frames[i].fModelNameAddr != 0)
@@ -525,4 +538,35 @@ while (pos < size) {
         i++;
     }
     break;
+}
+
+/* Additionally read the externally defined default FB on Sandy */
+if (firstId == FirstSandyBridgeId) {
+    pos = 0x20000;
+    while (pos < size) {
+        firstId = ReadUInt(pos);
+        if (firstId == DefSandyBridgeId) {
+            FSeek(pos);
+            FramebufferSNB frames <optimize=false, read=framebufferSNBToPrintable>;
+            Printf("Default SNB, DVMT: %s, FBMEM: %s, VRAM: %s, Flags: 0x00000000\n",
+                bytesToPrintable(frames[i].fStolenMemorySize), bytesToPrintable(frames[i].fFramebufferMemorySize), bytesToPrintable(frames[i].fUnifiedMemorySize));
+            Printf("Camelia: %s, Freq: %s, FreqMax: %s\n", cameliaToPrintable(frames[i].cameliaVersion), 
+                frequencyToPrintable(frames[i].fBacklightFrequency), frequencyToPrintable(frames[i].fBacklightMax));
+            Printf("Mobile: %d, PipeCount: %d, PortCount: %d, FBMemoryCount: %d\n", frames[i].fMobile, frames[i].fPipeCount,
+                frames[i].fPortCount, frames[i].fFBMemoryCount);
+            for (j = 0; j < frames[i].fPortCount; j++)
+                Printf("%s\n", connectorToPrintable(frames[i].connectors[j]));
+            Printf("\n");
+            break;
+        } else {
+            pos += sizeof(uint32_t);
+        }
+    }
+
+    Printf("Note, that without AAPL,snb-platform-id the following models will use predefined IDs:\n");
+    Printf("Mac-94245B3640C91C81 -> SNB0 (MacBookPro8,1)\n");    Printf("Mac-94245AF5819B141B -> SNB0\n");    Printf("Mac-94245A3940C91C80 -> SNB0 (MacBookPro8,2)\n");    Printf("Mac-942459F5819B171B -> SNB0 (MacBookPro8,3)\n");    Printf("Mac-8ED6AF5B48C039E1 -> SNB2 (Macmini5,1)\n");    Printf("Mac-7BA5B2794B2CDB12 -> SNB2 (Macmini5,3)\n");    Printf("Mac-4BC72D62AD45599E -> SNB3 (Macmini5,2)     -> no ports\n");    Printf("Mac-742912EFDBEE19B3 -> SNB4 (MacBookAir4,2)\n");    Printf("Mac-C08A6BB70A942AC2 -> SNB4 (MacBookAir4,1)\n");    Printf("Mac-942B5BF58194151B -> SNB5 (iMac12,1)       -> no ports\n");    Printf("Mac-942B5B3A40C91381 -> SNB5                  -> no ports\n");    Printf("Mac-942B59F58194171B -> SNB5 (iMac12,2)       -> no ports\n");
+} else if (firstId == FirstSkylakeId) {
+    Printf("Note, that without AAPL,ig-platform-id the following ID is assumed: 0x19120000\n");
+} else if (firstId == FirstKabyLakeId) {
+    Printf("Note, that without AAPL,ig-platform-id the following ID is assumed: 0x59160000\n");
 }

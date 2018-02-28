@@ -10,6 +10,6 @@
 
 #include <stdint.h>
 
-const char *getModelName(uint32_t device);
+const char *getModelName(uint32_t device, uint32_t &fakeId);
 
 #endif /* kern_model_hpp */
