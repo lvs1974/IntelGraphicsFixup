@@ -17,6 +17,13 @@ public:
 	bool init();
 	void deinit();
 
+	/**
+	 *  Check whether the frame has no connectors
+	 *
+	 *  @return true if offline
+	 */
+	static bool isConnectorLessFrame();
+
 private:
 	/**
 	 *  Obtain necessary symbols from the kernel
@@ -50,6 +57,11 @@ private:
 	 *  @param index   kinfo handle
 	 */
 	void loadIGGuCPatches(KernelPatcher &patcher, size_t index);
+
+	/**
+	 *  Runs over the devices (if not done previously) and corrects their properties.
+	 */
+	void correctDeviceProperties();
 
 	/**
 	 *  Inject IGPU properties and hooks
@@ -245,9 +257,19 @@ private:
 	bool gotInfo {false};
 
 	/**
+	 *  Property correction status
+	 */
+	bool doneCorrectingProperties {false};
+
+	/**
 	 *  connector-less frame
 	 */
 	bool connectorLessFrame {false};
+
+	/**
+	 *  Enables PCI device-id hooking
+	 */
+	bool hookConfigReads {false};
 
 	/**
 	 *  External GPU status

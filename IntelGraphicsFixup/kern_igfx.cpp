@@ -133,8 +133,9 @@ bool IGFX::init() {
 		return false;
 	}
 
+	callbackIgfx = static_cast<IGFX *>(this);
+
 	error = lilu.onKextLoad(kextList, kextListSize, [](void *user, KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
-		callbackIgfx = static_cast<IGFX *>(user);
 		callbackPatcher = &patcher;
 		callbackIgfx->processKext(patcher, index, address, size);
 	}, this);
@@ -148,6 +149,19 @@ bool IGFX::init() {
 }
 
 void IGFX::deinit() {}
+
+bool IGFX::isConnectorLessFrame() {
+	DBGLOG("igfx", "checking frame connectors");
+	if (callbackIgfx) {
+		if (!callbackIgfx->doneCorrectingProperties) {
+			DBGLOG("igfx", "correcting device properties on audio request");
+			callbackIgfx->correctDeviceProperties();
+		}
+		DBGLOG("igfx", "connector-less frame is %d", callbackIgfx->connectorLessFrame);
+		return callbackIgfx->connectorLessFrame;
+	}
+	return false;
+}
 
 uint32_t IGFX::pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t sessionCommand, uint32_t sessionAppId, uint32_t *a4, bool flag) {
 	//DBGLOG("igfx, "pavpCallback: cmd = %d, flag = %d, app = %d, a4 = %s", sessionCommand, flag, sessionAppId, a4 == nullptr ? "null" : "not null");
@@ -257,6 +271,14 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 	if (!callbackIgfx || PE_parse_boot_argn("-igfxvesa", &tmp, sizeof(tmp))) {
 		DBGLOG("igfx", "prevent starting controller");
 		return false;
+	}
+
+	if (callbackIgfx->hookConfigReads) {
+		if (KernelPatcher::routeVirtual(provider, WIOKit::PCIConfigOffset::ConfigRead16, configRead16, &callbackIgfx->orgConfigRead16) &&
+			KernelPatcher::routeVirtual(provider, WIOKit::PCIConfigOffset::ConfigRead32, configRead32, &callbackIgfx->orgConfigRead32))
+			DBGLOG("igfx", "hooked configRead read methods!");
+		else
+			SYSLOG("igfx", "failed to hook configRead read methods!");
 	}
 
 	// By default Apple drivers load Apple-specific firmware, which is incompatible.
@@ -584,15 +606,17 @@ void IGFX::initInterruptServices(void *that) {
 
 uint16_t IGFX::configRead16(IORegistryEntry *service, uint32_t space, uint8_t offset) {
 	if (callbackIgfx) {
-		auto name = service->getName();
-		DBGLOG("igfx", "configRead16 IGPU name %s 0x%08X at off 0x%02X", name ? name : "(null)", space, offset);
 		auto result = callbackIgfx->orgConfigRead16(service, space, offset);
+		auto name = service->getName();
+		if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
+			DBGLOG("igfx", "configRead16 IGPU 0x%08X at off 0x%02X", space, offset);
 
-		if (offset == WIOKit::kIOPCIConfigDeviceID) {
-			uint32_t device;
-			if (WIOKit::getOSDataValue(service, "device-id", device) && device != result) {
-				DBGLOG("igfx", "configRead16 reported 0x%04x insted of 0x%04x", device, result);
-				return device;
+			if (offset == WIOKit::kIOPCIConfigDeviceID) {
+				uint32_t device;
+				if (WIOKit::getOSDataValue(service, "device-id", device) && device != result) {
+					DBGLOG("igfx", "configRead16 IGPU reported 0x%04x insted of 0x%04x", device, result);
+					return device;
+				}
 			}
 		}
 
@@ -604,16 +628,18 @@ uint16_t IGFX::configRead16(IORegistryEntry *service, uint32_t space, uint8_t of
 
 uint32_t IGFX::configRead32(IORegistryEntry *service, uint32_t space, uint8_t offset) {
 	if (callbackIgfx) {
-		auto name = service->getName();
-		DBGLOG("igfx", "configRead32 IGPU name %s 0x%08X at off 0x%02X", name ? name : "(null)", space, offset);
 		auto result = callbackIgfx->orgConfigRead32(service, space, offset);
-		// According to lvs unaligned reads may happen
-		if (offset == WIOKit::kIOPCIConfigDeviceID || offset == WIOKit::kIOPCIConfigVendorID) {
-			uint32_t device;
-			if (WIOKit::getOSDataValue(service, "device-id", device) && device != (result & 0xFFFF)) {
-				device |= result & 0xFFFF0000;
-				DBGLOG("igfx", "configRead32 reported 0x%08x insted of 0x%08x", device, result);
-				return device;
+		auto name = service->getName();
+		if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
+			DBGLOG("igfx", "configRead32 IGPU name %s 0x%08X at off 0x%02X", safeString(name), space, offset);
+			// According to lvs unaligned reads may happen
+			if (offset == WIOKit::kIOPCIConfigDeviceID || offset == WIOKit::kIOPCIConfigVendorID) {
+				uint32_t device;
+				if (WIOKit::getOSDataValue(service, "device-id", device) && device != (result & 0xFFFF)) {
+					device |= result & 0xFFFF0000;
+					DBGLOG("igfx", "configRead32 reported 0x%08x insted of 0x%08x", device, result);
+					return device;
+				}
 			}
 		}
 
@@ -863,6 +889,11 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 		patcher.clearError();
 	}
 
+	if (!doneCorrectingProperties)
+		correctDeviceProperties();
+}
+
+void IGFX::correctDeviceProperties() {
 	// Detect all the devices
 	auto sect = WIOKit::findEntryByPrefix("/AppleACPIPlatformExpert", "PCI", gIOServicePlane);
 	if (sect) sect = WIOKit::findEntryByPrefix(sect, "AppleACPIPCI", gIOServicePlane);
@@ -877,7 +908,7 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 					WIOKit::getOSDataValue(obj, "class-code", code)) {
 					auto name = obj->getName();
 					if (!foundIGPU && (code == WIOKit::ClassCode::DisplayController ||
-						code == WIOKit::ClassCode::VGAController)) {
+					   code == WIOKit::ClassCode::VGAController)) {
 						// We defer IGPU property injection here to firstly detect discrete GPUs.
 						igpu = obj;
 						foundIGPU = true;
@@ -885,14 +916,14 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 					}
 
 					if (code == WIOKit::ClassCode::PCIBridge) {
-						DBGLOG("igfx", "found pci bridge %s", name ? name : "(unnamed)");
+						DBGLOG("igfx", "found pci bridge %s", safeString(name));
 						auto gpuiterator = IORegistryIterator::iterateOver(obj, gIOServicePlane, kIORegistryIterateRecursively);
 						if (gpuiterator) {
 							IORegistryEntry *gpuobj = nullptr;
 							while ((gpuobj = OSDynamicCast(IORegistryEntry, gpuiterator->getNextObject())) != nullptr) {
 								uint32_t gpuvendor = 0, gpucode = 0;
 								auto gpuname = gpuobj->getName();
-								DBGLOG("igfx", "found %s on pci bridge", gpuname ? gpuname : "(unnamed)");
+								DBGLOG("igfx", "found %s on pci bridge", safeString(gpuname));
 								if (WIOKit::getOSDataValue(gpuobj, "vendor-id", gpuvendor) &&
 									WIOKit::getOSDataValue(gpuobj, "class-code", gpucode) &&
 									(gpucode == WIOKit::ClassCode::DisplayController || gpucode == WIOKit::ClassCode::VGAController)) {
@@ -920,7 +951,7 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 							foundIMEI = true;
 						} else if (!correctName && (code == 0x78000 || !strcmp(name, "HECI") || !strcmp(name, "MEI"))) {
 							// IMEI is improperly named or unnamed! 0x78000 is implementation defined, but works on HSW so far.
-							DBGLOG("igfx", "found invalid Intel ME device %s", name ? name : "(null)");
+							DBGLOG("igfx", "found invalid Intel ME device %s", safeString(name));
 							WIOKit::renameDevice(obj, "IMEI");
 							foundIMEI = true;
 						}
@@ -952,10 +983,12 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 			iterator->release();
 		}
 	}
+
+	doneCorrectingProperties = true;
 }
 
 void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
-	DBGLOG("igfx", "found Intel GPU device %s", name ? name : "(null)");
+	DBGLOG("igfx", "found Intel GPU device %s", safeString(name));
 	if (!name || strcmp(name, "IGPU"))
 		WIOKit::renameDevice(obj, "IGPU");
 
@@ -968,7 +1001,7 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 
 	auto model = getModelName(realDevice, fakeDevice);
 	DBGLOG("igfx", "IGPU has real %04X acpi %04X fake %04X and model %s",
-		   realDevice, acpiDevice, fakeDevice, model ? model : "(null)");
+		   realDevice, acpiDevice, fakeDevice, safeString(model));
 
 	if (model && !obj->getProperty("model")) {
 		DBGLOG("igfx", "adding missing model from autotodetect");
@@ -989,10 +1022,8 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 			obj->setProperty("device-id", &fakeDevice, sizeof(fakeDevice));
 		}
 		if (fakeDevice != realDevice) {
-			DBGLOG("igfx", "hooking configRead methods");
-			if (!KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead16, configRead16, &orgConfigRead16) ||
-				!KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead32, configRead32, &orgConfigRead32))
-				SYSLOG("igfx", "failed to hook configRead read methods!");
+			DBGLOG("igfx", "postponing configRead method hooks");
+			hookConfigReads = true;
 		}
 	}
 
@@ -1010,55 +1041,90 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 			connectorLessFrame = CPUInfo::isConnectorLessPlatformId(platform);
 		} else {
 			DBGLOG("igfx", "warning, no framebuffer id was found, falling back to defaults");
-
 			// There is no connectorLess frame in Broadwerll
 			if ((hasExternalAMD || hasExternalNVIDIA) && cpuGeneration != CPUInfo::CpuGeneration::Broadwell) {
 				DBGLOG("igfx", "discovered external AMD or NVIDIA, using frame without connectors");
 				connectorLessFrame = true;
 				if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
-					obj->setProperty("AAPL,snb-platform-id", OSData::withBytes(&CPUInfo::ConnectorLessSandyBridgePlatformId1, sizeof(platform)));
+					platform = CPUInfo::ConnectorLessSandyBridgePlatformId1;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge)
-					obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::ConnectorLessIvyBridgePlatformId1, sizeof(platform)));
+					platform = CPUInfo::ConnectorLessIvyBridgePlatformId1;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::Haswell)
-					obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::ConnectorLessHaswellPlatformId1, sizeof(platform)));
+					platform = CPUInfo::ConnectorLessHaswellPlatformId1;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::Skylake)
-					obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::ConnectorLessSkylakePlatformId1, sizeof(platform)));
+					platform = CPUInfo::ConnectorLessSkylakePlatformId1;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::KabyLake)
-					obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::ConnectorLessKabyLakePlatformId1, sizeof(platform)));
-				else
-					SYSLOG("igfx", "unsupported cpu generation has no frame id, this is likely an error!");
+					platform = CPUInfo::ConnectorLessKabyLakePlatformId1;
 			} else {
-				//TODO: perhaps choose something common for others too...
-				if (cpuGeneration == CPUInfo::CpuGeneration::Skylake)
-					obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::DefaultSkylakePlatformId, sizeof(platform)));
-				else if (cpuGeneration == CPUInfo::CpuGeneration::KabyLake)
-					obj->setProperty("AAPL,ig-platform-id", OSData::withBytes(&CPUInfo::DefaultKabyLakePlatformId, sizeof(platform)));
+				// These are really failsafe defaults, you should NOT rely on them.
+				auto model = WIOKit::getComputerModel();
+				if (model == WIOKit::ComputerModel::ComputerLaptop) {
+					if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
+						platform = 0x00010000;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge)
+						platform = 0x01660003;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::Haswell)
+						platform = 0x0A160000;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::Broadwell)
+						platform = 0x16260006;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::Skylake)
+						platform = 0x19160000;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::KabyLake)
+						platform = 0x591B0000;
+				} else {
+					if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
+						platform = 0x00030010;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge)
+						platform = 0x0166000A;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::Haswell)
+						platform = 0x0D220003;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::Broadwell)
+						platform = 0x16220007;  /* for now */
+					else if (cpuGeneration == CPUInfo::CpuGeneration::Skylake)
+						platform = CPUInfo::DefaultSkylakePlatformId;
+					else if (cpuGeneration == CPUInfo::CpuGeneration::KabyLake)
+						platform = CPUInfo::DefaultKabyLakePlatformId;
+				}
+			}
+
+			if (platform != CPUInfo::DefaultInvalidPlatformId) {
+				if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
+					obj->setProperty("AAPL,snb-platform-id", &platform, sizeof(platform));
+				else
+					obj->setProperty("AAPL,ig-platform-id", &platform, sizeof(platform));
+			} else {
+				SYSLOG("igfx", "unsupported cpu generation has no frame id, this is likely an error!");
 			}
 		}
 	}
 
 	// HDMI audio fixes
-	if (!obj->getProperty("hda-gfx"))
-		obj->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
-	else
-		DBGLOG("igfx", "existing hda-gfx in IGPU");
+	if (!connectorLessFrame) {
+		if (!obj->getProperty("hda-gfx"))
+			obj->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
+		else
+			DBGLOG("igfx", "existing hda-gfx in IGPU");
+	}
 
 	// Other property fixes
 	if (!obj->getProperty("built-in")) {
-		DBGLOG("igfx", "fixing built-in in hdau");
+		DBGLOG("igfx", "fixing built-in in IGPU");
 		uint8_t builtBytes[] { 0x01, 0x00, 0x00, 0x00 };
 		obj->setProperty("built-in", OSData::withBytes(builtBytes, sizeof(builtBytes)));
 	} else {
-		DBGLOG("igfx", "found existing built-in in hdau");
+		DBGLOG("igfx", "found existing built-in in IGPU");
 	}
 }
 
 void IGFX::loadIGScheduler4Patches(KernelPatcher &patcher, size_t index) {
 	gKmGen9GuCBinary = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL17__KmGen9GuCBinary"));
 	if (gKmGen9GuCBinary) {
+		DBGLOG("igfx", "obtained __KmGen9GuCBinary");
+		patcher.clearError();
+
 		auto loadGuC = patcher.solveSymbol(index, "__ZN13IGHardwareGuC13loadGuCBinaryEv");
 		if (loadGuC) {
-			DBGLOG("igfx", "obtained __ZN13IGHardwareGuC13loadGuCBinaryEv");
+			DBGLOG("igfx", "obtained IGHardwareGuC::loadGuCBinary");
 			patcher.clearError();
 
 			// Lookup the assignment to the size register.
@@ -1074,54 +1140,50 @@ void IGFX::loadIGScheduler4Patches(KernelPatcher &patcher, size_t index) {
 				firmwareSizePointer = reinterpret_cast<uint32_t *>(pos);
 				DBGLOG("igfx", "discovered firmware size: %d bytes", *firmwareSizePointer);
 				// Firmware size must not be bigger than 1 MB
-				if ((*firmwareSizePointer & 0xFFFFF) == *firmwareSizePointer) {
+				if ((*firmwareSizePointer & 0xFFFFF) == *firmwareSizePointer)
 					// Firmware follows the signature
 					signaturePointer[0] = gKmGen9GuCBinary + *firmwareSizePointer;
-				} else {
+				else
 					firmwareSizePointer = nullptr;
-				}
 			}
 
 			orgLoadGuCBinary = reinterpret_cast<t_load_guc_binary>(patcher.routeFunction(loadGuC, reinterpret_cast<mach_vm_address_t>(loadGuCBinary), true));
-			if (patcher.getError() == KernelPatcher::Error::NoError) {
-				DBGLOG("igfx", "routed __ZN13IGHardwareGuC13loadGuCBinaryEv");
-			} else {
-				SYSLOG("igfx", "failed to route __ZN13IGHardwareGuC13loadGuCBinaryEv");
-			}
+			if (patcher.getError() == KernelPatcher::Error::NoError)
+				DBGLOG("igfx", "routed IGHardwareGuC::loadGuCBinary");
+			else
+				SYSLOG("igfx", "failed to route IGHardwareGuC::loadGuCBinary");
 		} else {
-			SYSLOG("igfx", "failed to resolve __ZN13IGHardwareGuC13loadGuCBinaryEv");
+			SYSLOG("igfx", "failed to resolve IGHardwareGuC::loadGuCBinary");
 		}
 
 		auto loadFW = patcher.solveSymbol(index, "__ZN12IGScheduler412loadFirmwareEv");
 		if (loadFW) {
-			DBGLOG("igfx", "obtained __ZN12IGScheduler412loadFirmwareEv");
+			DBGLOG("igfx", "obtained IGScheduler4::loadFirmware");
 			patcher.clearError();
 
 			orgLoadFirmware = reinterpret_cast<t_load_firmware>(patcher.routeFunction(loadFW, reinterpret_cast<mach_vm_address_t>(loadFirmware), true));
-			if (patcher.getError() == KernelPatcher::Error::NoError) {
-				DBGLOG("igfx", "routed __ZN12IGScheduler412loadFirmwareEv");
-			} else {
-				SYSLOG("igfx", "failed to route __ZN12IGScheduler412loadFirmwareEv");
-			}
+			if (patcher.getError() == KernelPatcher::Error::NoError)
+				DBGLOG("igfx", "routed IGScheduler4::loadFirmware");
+			else
+				SYSLOG("igfx", "failed to route IGScheduler4::loadFirmware");
 		} else {
-			SYSLOG("igfx", "failed to resolve __ZN12IGScheduler412loadFirmwareEv");
+			SYSLOG("igfx", "failed to resolve IGScheduler4::loadFirmware");
 		}
 
 		auto initSched = patcher.solveSymbol(index, "__ZN13IGHardwareGuC16initSchedControlEv");
 		if (initSched) {
-			DBGLOG("igfx", "obtained __ZN13IGHardwareGuC16initSchedControlEv");
+			DBGLOG("igfx", "obtained IGHardwareGuC::initSchedControl");
 			patcher.clearError();
 			orgInitSchedControl = reinterpret_cast<t_init_sched_control>(patcher.routeFunction(initSched, reinterpret_cast<mach_vm_address_t>(initSchedControl), true));
-			if (patcher.getError() == KernelPatcher::Error::NoError) {
-				DBGLOG("igfx", "routed __ZN13IGHardwareGuC16initSchedControlEv");
-			} else {
-				SYSLOG("igfx", "failed to route __ZN13IGHardwareGuC16initSchedControlEv");
-			}
+			if (patcher.getError() == KernelPatcher::Error::NoError)
+				DBGLOG("igfx", "routed IGHardwareGuC::initSchedControl");
+			else
+				SYSLOG("igfx", "failed to route IGHardwareGuC::initSchedControl");
 		} else {
-			SYSLOG("igfx", "failed to resolve __ZN13IGHardwareGuC16initSchedControlEv");
+			SYSLOG("igfx", "failed to resolve IGHardwareGuC::initSchedControl");
 		}
 	} else {
-		SYSLOG("igfx", "failed to resoolve __ZL17__KmGen9GuCBinary");
+		SYSLOG("igfx", "failed to resoolve __KmGen9GuCBinary");
 	}
 }
 
@@ -1168,11 +1230,10 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		DBGLOG("igfx", "obtained IGGuC::loadBinary");
 		patcher.clearError();
 		orgLoadGuCBinary = reinterpret_cast<t_load_guc_binary>(patcher.routeFunction(loadGuC, reinterpret_cast<mach_vm_address_t>(loadGuCBinary), true));
-		if (patcher.getError() == KernelPatcher::Error::NoError) {
+		if (patcher.getError() == KernelPatcher::Error::NoError)
 			DBGLOG("igfx", "routed IGGuC::loadBinary");
-		} else {
+		else
 			SYSLOG("igfx", "failed to route IGGuC::loadBinary");
-		}
 	} else {
 		SYSLOG("igfx", "failed to resolve IGGuC::loadBinary");
 	}
@@ -1182,32 +1243,31 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		DBGLOG("igfx", "obtained IGGuC::initGucCtrl");
 		patcher.clearError();
 		orgInitSchedControl = reinterpret_cast<t_init_sched_control>(patcher.routeFunction(initSched, reinterpret_cast<mach_vm_address_t>(initSchedControl), true));
-		if (patcher.getError() == KernelPatcher::Error::NoError) {
+		if (patcher.getError() == KernelPatcher::Error::NoError)
 			DBGLOG("igfx", "routed IGGuC::initGucCtrl");
-		} else {
+		else
 			SYSLOG("igfx", "failed to route IGGuC::initGucCtrl");
-		}
 	} else {
 		SYSLOG("igfx", "failed to resolve IGGuC::initGucCtrl");
 	}
 
 	auto initIntr = patcher.solveSymbol(index, "__ZN5IGGuC21initInterruptServicesEv");
 	if (initIntr) {
-		DBGLOG("igfx", "obtained __ZN5IGGuC21initInterruptServicesEv");
+		DBGLOG("igfx", "obtained IGGuC::initInterruptServices");
 		patcher.clearError();
 		orgInitInterruptServices = reinterpret_cast<t_init_intr_services>(patcher.routeFunction(initIntr, reinterpret_cast<mach_vm_address_t>(initInterruptServices), true));
-		if (patcher.getError() == KernelPatcher::Error::NoError) {
+		if (patcher.getError() == KernelPatcher::Error::NoError)
 			DBGLOG("igfx", "routed IGGuC::initInterruptServices");
-		} else {
+		else
 			SYSLOG("igfx", "failed to route IGGuC::initInterruptServices");
-		}
 	} else {
 		SYSLOG("igfx", "failed to resolve IGGuC::initInterruptServices");
 	}
 
 	auto canLoad = patcher.solveSymbol(index, "__ZN5IGGuC15canLoadFirmwareEP22IOGraphicsAccelerator2");
 	if (canLoad) {
-		// mov eax,1
+		DBGLOG("igfx", "obtained IGGuC::canLoadFirmware");
+		patcher.clearError();// mov eax,1
 		// ret
 		uint8_t ret[] {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
 		patcher.routeBlock(canLoad, ret, sizeof(ret));
@@ -1221,14 +1281,13 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 
 	auto dmaMap = patcher.solveSymbol(index, "__ZN5IGGuC12dmaHostToGuCEyjjNS_12IGGucDmaTypeEb");
 	if (dmaMap) {
-		DBGLOG("igfx", "obtained __ZN5IGGuC12dmaHostToGuCEyjjNS_12IGGucDmaTypeEb");
+		DBGLOG("igfx", "obtained IGGuC::dmaHostToGuC");
 		patcher.clearError();
 		orgDmaHostToGuC = reinterpret_cast<t_dma_host_to_guc>(patcher.routeFunction(dmaMap, reinterpret_cast<mach_vm_address_t>(dmaHostToGuC), true));
-		if (patcher.getError() == KernelPatcher::Error::NoError) {
+		if (patcher.getError() == KernelPatcher::Error::NoError)
 			DBGLOG("igfx", "routed IGGuC::dmaHostToGuC");
-		} else {
+		else
 			SYSLOG("igfx", "failed to route IGGuC::dmaHostToGuC");
-		}
 	} else {
 		SYSLOG("igfx", "failed to resolve IGGuC::dmaHostToGuC");
 	}
@@ -1325,30 +1384,28 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 					if (decideLoadScheduler != BasicScheduler) {
 						auto bufferWithOptions = patcher.solveSymbol(index, "__ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
 						if (bufferWithOptions) {
-							DBGLOG("igfx", "obtained __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+							DBGLOG("igfx", "obtained IGSharedMappedBuffer::withOptions");
 							patcher.clearError();
 							orgIgBufferWithOptions = reinterpret_cast<t_ig_buffer_with_options>(patcher.routeFunction(bufferWithOptions, reinterpret_cast<mach_vm_address_t>(igBufferWithOptions), true));
-							if (patcher.getError() == KernelPatcher::Error::NoError) {
-								DBGLOG("igfx", "routed __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
-							} else {
-								SYSLOG("igfx", "failed to route __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
-							}
+							if (patcher.getError() == KernelPatcher::Error::NoError)
+								DBGLOG("igfx", "routed IGSharedMappedBuffer::withOptions");
+							else
+								SYSLOG("igfx", "failed to route IGSharedMappedBuffer::withOptions");
 						} else {
-							SYSLOG("igfx", "failed to resolve __ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+							SYSLOG("igfx", "failed to resolve IGSharedMappedBuffer::withOptions");
 						}
 
 						auto getGpuVaddr = patcher.solveSymbol(index, "__ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
 						if (getGpuVaddr) {
-							DBGLOG("igfx", "obtained __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+							DBGLOG("igfx", "obtained IGMappedBuffer::getGPUVirtualAddress");
 							patcher.clearError();
 							orgIgGetGpuVirtualAddress = reinterpret_cast<t_ig_get_gpu_vaddr>(patcher.routeFunction(getGpuVaddr, reinterpret_cast<mach_vm_address_t>(igBufferGetGpuVirtualAddress), true));
-							if (patcher.getError() == KernelPatcher::Error::NoError) {
-								DBGLOG("igfx", "routed __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
-							} else {
-								SYSLOG("igfx", "failed to route __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
-							}
+							if (patcher.getError() == KernelPatcher::Error::NoError)
+								DBGLOG("igfx", "routed IGMappedBuffer::getGPUVirtualAddress");
+							else
+								SYSLOG("igfx", "failed to route IGMappedBuffer::getGPUVirtualAddress");
 						} else {
-							SYSLOG("igfx", "failed to resolve __ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+							SYSLOG("igfx", "failed to resolve IGMappedBuffer::getGPUVirtualAddress");
 						}
 
 						if (decideLoadScheduler == ReferenceScheduler)
