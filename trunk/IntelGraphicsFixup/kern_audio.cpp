@@ -10,6 +10,7 @@
 #include <Headers/plugin_start.hpp>
 
 #include "kern_audio.hpp"
+#include "kern_igfx.hpp"
 
 OSDefineMetaClassAndStructors(IntelGraphicsAudio, IOService)
 
@@ -18,18 +19,27 @@ uint32_t IntelGraphicsAudio::getAnalogLayout() {
 	// If we have HDEF properly configured, get the value
 	static uint32_t layout = 0;
 
-	//FIXME: rework this to look in all Intel audio devices, since HDEF renaming may happen later!
 	if (!layout) {
-		const char *tree[] {"AppleACPIPCI", "HDEF"};
+		const char *tree[] {"AppleACPIPCI"};
 		auto sect = WIOKit::findEntryByPrefix("/AppleACPIPlatformExpert", "PCI", gIOServicePlane);
 		for (size_t i = 0; sect && i < arrsize(tree); i++) {
 			sect = WIOKit::findEntryByPrefix(sect, tree[i], gIOServicePlane);
 			if (sect && i+1 == arrsize(tree)) {
-				if (WIOKit::getOSDataValue(sect, "layout-id", layout)) {
-					DBGLOG("audio", "found HDEF with layout-id %u", layout);
-					return layout;
-				} else {
-					SYSLOG("audio", "found HDEF with missing layout-id");
+				auto iterator = sect->getChildIterator(gIOServicePlane);
+				if (iterator) {
+					IORegistryEntry *obj = nullptr;
+					while ((obj = OSDynamicCast(IORegistryEntry, iterator->getNextObject())) != nullptr) {
+						uint32_t vendor = 0;
+						// We can technically check the class-code too, but it is not required.
+						// HDEF and HDAU should have the same layout-id if any, so it is irrelevant which we find.
+						if (WIOKit::getOSDataValue(obj, "layout-id", layout) &&
+							WIOKit::getOSDataValue(obj, "vendor-id", vendor) &&
+							vendor == WIOKit::VendorID::Intel) {
+							DBGLOG("audio", "found intel audio %s with layout-id %u", safeString(obj->getName()), layout);
+							return layout;
+						}
+					}
+					iterator->release();
 				}
 			}
 		}
@@ -42,9 +52,8 @@ uint32_t IntelGraphicsAudio::getAnalogLayout() {
 }
 
 IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
-	if (!ADDPR(startSuccess)) {
+	if (!ADDPR(startSuccess))
 		return nullptr;
-	}
 
 	if (!hdaService) {
 		DBGLOG("audio", "received null digitial audio device");
@@ -60,9 +69,9 @@ IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
 	
 	auto hdaPlaneName = hdaService->getName();
 	DBGLOG("audio", "corrects digital audio for hdau at %s with %04X:%04X",
-		   hdaPlaneName ? hdaPlaneName : "(null)", hdaVen, hdaDev);
+		   safeString(hdaPlaneName), hdaVen, hdaDev);
 	
-	if (hdaVen != 0x8086) {
+	if (hdaVen != WIOKit::VendorID::Intel) {
 		DBGLOG("audio", "unsupported hdau vendor");
 		return nullptr;
 	}
@@ -87,33 +96,33 @@ IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
 	
 	// hda-gfx allows to separate the devices, must be unique
 	// WhateverGreen and NvidiaGraphicsFixup use onboard-2 and so on for GFX.
-	if (!hdaService->getProperty("hda-gfx")) {
-		// Haswell and Broadwell have a dedicated device for digital audio source.
-		auto gen = CPUInfo::getGeneration();
-		if (gen == CPUInfo::CpuGeneration::Haswell || gen == CPUInfo::CpuGeneration::Broadwell)
-			hdaService->setProperty("hda-gfx", OSData::withBytes("built-in", sizeof("built-in")));
-		else
-			hdaService->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
-	} else {
-		DBGLOG("audio", "existing hda-gfx, assuming complete inject");
-	}
-
-	// layout-id is heard to be required in rare cases
-	if (!isAppleAnalog) {
-		if (!hdaService->getProperty("layout-id")) {
-			DBGLOG("audio", "fixing layout-id in hdau");
-			uint32_t layout = getAnalogLayout();
-			hdaService->setProperty("layout-id", OSData::withBytes(&layout, sizeof(layout)));
+	if (!IGFX::isConnectorLessFrame()) {
+		if (!hdaService->getProperty("hda-gfx")) {
+			// Haswell and Broadwell have a dedicated device for digital audio source.
+			auto gen = CPUInfo::getGeneration();
+			if (isDigital || (gen != CPUInfo::CpuGeneration::Haswell && gen != CPUInfo::CpuGeneration::Broadwell))
+				hdaService->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
 		} else {
-			DBGLOG("audio", "found existing layout-id in hdau");
+			DBGLOG("audio", "existing hda-gfx, assuming complete inject");
+		}
+
+		// layout-id is heard to be required in rare cases
+		if (!isAppleAnalog) {
+			if (!hdaService->getProperty("layout-id")) {
+				DBGLOG("audio", "fixing layout-id in hdau");
+				uint32_t layout = getAnalogLayout();
+				hdaService->setProperty("layout-id", &layout, sizeof(layout));
+			} else {
+				DBGLOG("audio", "found existing layout-id in hdau");
+			}
 		}
 	}
 
 	// built-in is required for non-renamed devices
 	if (!hdaService->getProperty("built-in")) {
 		DBGLOG("audio", "fixing built-in in hdau");
-		uint8_t builtBytes[] { 0x01, 0x00, 0x00, 0x00 };
-		hdaService->setProperty("built-in", OSData::withBytes(builtBytes, sizeof(builtBytes)));
+		uint8_t builtBytes[] { 0x00 };
+		hdaService->setProperty("built-in", builtBytes, sizeof(builtBytes));
 	} else {
 		DBGLOG("audio", "found existing built-in in hdau");
 	}
