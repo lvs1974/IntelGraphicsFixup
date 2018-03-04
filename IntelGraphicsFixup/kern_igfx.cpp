@@ -986,7 +986,7 @@ void IGFX::correctDeviceProperties() {
 							if (suggest != 0) {
 								uint8_t bus = 0, dev = 0, fun = 0;
 								WIOKit::getDeviceAddress(obj, bus, dev, fun);
-								SYSLOG("igfx", "IMEI device (%02X:%02X:%02X) has device-id 0x%04X, you should change it to 0x%04X",
+								SYSLOG("igfx", "IMEI device (%02X:%02X.%02X) has device-id 0x%04X, you should change it to 0x%04X",
 									   bus, dev, fun, device, suggest);
 							}
 						}
@@ -1034,7 +1034,7 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 		if (fakeDevice != acpiDevice) {
 			uint8_t bus = 0, dev = 0, fun = 0;
 			WIOKit::getDeviceAddress(obj, bus, dev, fun);
-			SYSLOG("igfx", "IGPU device (%02X:%02X:%02X) has device-id 0x%04X, you should change it to 0x%04X",
+			SYSLOG("igfx", "IGPU device (%02X:%02X.%02X) has device-id 0x%04X, you should change it to 0x%04X",
 				   bus, dev, fun, acpiDevice, fakeDevice);
 		}
 		if (fakeDevice != realDevice) {
@@ -1061,7 +1061,7 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 		} else {
 			uint8_t bus = 0, dev = 0, fun = 0;
 			WIOKit::getDeviceAddress(obj, bus, dev, fun);
-			DBGLOG("igfx", "IGPU device (%02X:%02X:%02X) has no framebuffer id, falling back to defaults", bus, dev, fun);
+			DBGLOG("igfx", "IGPU device (%02X:%02X.%02X) has no framebuffer id, falling back to defaults", bus, dev, fun);
 
 			// There is no connectorLess frame in Broadwerll
 			if ((hasExternalAMD || hasExternalNVIDIA) && cpuGeneration != CPUInfo::CpuGeneration::Broadwell) {
