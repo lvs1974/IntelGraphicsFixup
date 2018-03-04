@@ -116,6 +116,8 @@ static DeviceModel deviceModels[] {
 	{ 0x591B, 0x0000, "Intel HD Graphics 630" },
 	{ 0x5926, 0x0000, "Intel Iris Plus Graphics 640" },
 	{ 0x5927, 0x0000, "Intel Iris Plus Graphics 650" },
+	// Currently unsupported and needs to be faked to 0x3E92 (mobile i3)
+	{ 0x3E91, 0x0000, "Intel UHD Graphics 630" },
 	{ 0x3E92, 0x0000, "Intel UHD Graphics 630" },
 	// Reserved/unused/generic Kaby Lake / Coffee Lake },
 	// { 0x3E9B, 0x0000, nullptr },
