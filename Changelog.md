@@ -49,12 +49,12 @@ IntelGraphicsFixup Changelog
 
 #### v1.2.5
 - Add basic automatic IGPU model detection if it is not set
-- Add IGPU device id correction (remove all the other kexts, non-default values may be passed via `igfxfake=val`)
+- Add IGPU device id correction (correct `device-id` should be set via device properties or ACPI
 - Add basic digital audio correction on (HDAU rename on Haswell and `layout-id`/`hda-gfx` where needed)
 - Add GFX0 -> IGPU automatic rename
 - Add MEI/HECI -> IMEI automatic rename
 - Add IMEI device id automatic correction on Sandy Bridge and Ivy Bridge
-- Add basic automatic AAPL,ig-platform-id injection (defaults for SKL/KBL and connector-less when AMD/NVIDIA is found)
+- Add basic automatic AAPL,ig-platform-id injection (defaults to connector-less when AMD/NVIDIA is found)
 - Add GuC microcode loading on SKL (9.33) and KBL (9.39) in 10.13 (enabled via `igfxfw=1` boot-arg)
 - Add `igfxframe=frame` boot-arg for framebuffer id injection in testing cases
 - Fix booting without `-disablegfxfirmware` boot argument on KBL GPUs

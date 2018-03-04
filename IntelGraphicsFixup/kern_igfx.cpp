@@ -61,6 +61,8 @@ enum : size_t {
 static size_t kextListSize = arrsize(kextList);
 
 bool IGFX::init() {
+	access = IOLockAlloc();
+    
 	PE_parse_boot_argn("igfxrst", &resetFramebuffer, sizeof(resetFramebuffer));
 	PE_parse_boot_argn("igfxfw", &decideLoadScheduler, sizeof(decideLoadScheduler));
 
@@ -148,15 +150,22 @@ bool IGFX::init() {
 	return true;
 }
 
-void IGFX::deinit() {}
+void IGFX::deinit() {
+	if (access) {
+		IOLockFree(access);
+		access = nullptr;
+	}
+}
 
 bool IGFX::isConnectorLessFrame() {
 	DBGLOG("igfx", "checking frame connectors");
-	if (callbackIgfx) {
+	if (callbackIgfx && callbackIgfx->access) {
+		IOLockLock(callbackIgfx->access);
 		if (!callbackIgfx->doneCorrectingProperties) {
 			DBGLOG("igfx", "correcting device properties on audio request");
 			callbackIgfx->correctDeviceProperties();
 		}
+		IOLockUnlock(callbackIgfx->access);
 		DBGLOG("igfx", "connector-less frame is %d", callbackIgfx->connectorLessFrame);
 		return callbackIgfx->connectorLessFrame;
 	}
@@ -273,14 +282,6 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 		return false;
 	}
 
-	if (callbackIgfx->hookConfigReads) {
-		if (KernelPatcher::routeVirtual(provider, WIOKit::PCIConfigOffset::ConfigRead16, configRead16, &callbackIgfx->orgConfigRead16) &&
-			KernelPatcher::routeVirtual(provider, WIOKit::PCIConfigOffset::ConfigRead32, configRead32, &callbackIgfx->orgConfigRead32))
-			DBGLOG("igfx", "hooked configRead read methods!");
-		else
-			SYSLOG("igfx", "failed to hook configRead read methods!");
-	}
-
 	// By default Apple drivers load Apple-specific firmware, which is incompatible.
 	// On KBL they do it unconditionally, which causes infinite loop.
 	// On 10.13 there is an option to ignore/load a generic firmware, which we set here.
@@ -292,9 +293,11 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 			uint32_t sched = 2; // force disable via plist
 			if (callbackIgfx->decideLoadScheduler == ReferenceScheduler)
 				sched = 4; // force reference scheduler
+#ifdef IGFX_APPLE_SCHEDULER
 			else if (callbackIgfx->decideLoadScheduler == AppleScheduler ||
 					 callbackIgfx->decideLoadScheduler == AppleCustomScheduler)
 				sched = 3; // force apple scheduler
+#endif
 			DBGLOG("igfx", "forcing scheduler preference %d", sched);
 			newDev->setObject("GraphicsSchedulerSelect", OSNumber::withNumber(sched, 32));
 			that->setProperty("Development", newDev);
@@ -310,9 +313,11 @@ bool IGFX::loadGuCBinary(void *that, bool flag) {
 		DBGLOG("igfx", "attempting to load firmware for %d scheduler for cpu gen %d",
 			   callbackIgfx->decideLoadScheduler, callbackIgfx->cpuGeneration);
 
+#ifdef IGFX_APPLE_SCHEDULER
 		// Go with for testing if requested.
 		if (callbackIgfx->decideLoadScheduler == AppleCustomScheduler)
 			return callbackIgfx->loadCustomBinary(that, flag);
+#endif
 
 		// Reset binary indexes
 		callbackIgfx->currentBinaryIndex = -1;
@@ -321,6 +326,7 @@ bool IGFX::loadGuCBinary(void *that, bool flag) {
 		// This is required to skip the ME hash verification loop...
 		bool shouldUnsetIONDrvMode = false;
 
+#ifdef IGFX_APPLE_SCHEDULER
 		// firmwareSizePointer is only required for IGScheduler4
 		if (callbackIgfx->decideLoadScheduler == AppleScheduler) {
 			auto intelAccelerator = static_cast<uint8_t **>(that)[2];
@@ -337,7 +343,10 @@ bool IGFX::loadGuCBinary(void *that, bool flag) {
 			}
 
 			callbackIgfx->performingFirmwareLoad = true;
-		} else if (callbackIgfx->firmwareSizePointer) {
+		}
+#endif
+
+		if (callbackIgfx->firmwareSizePointer) {
 			callbackIgfx->performingFirmwareLoad = true;
 		}
 
@@ -416,9 +425,11 @@ bool IGFX::initSchedControl(void *that, void *ctrl) {
 				uint32_t params[10];
 			};
 
+#ifdef DEBUG
 			auto v = &static_cast<ParamRegs *>(that)->params[0];
 			DBGLOG("igfx", "fw params1 %08X %08X %08X %08X %08X", v[0], v[1], v[2], v[3], v[4]);
 			DBGLOG("igfx", "fw params2 %08X %08X %08X %08X %08X", v[5], v[6], v[7], v[8], v[9]);
+#endif
 		}
 
 		callbackIgfx->performingFirmwareLoad = perfLoad;
@@ -605,16 +616,16 @@ void IGFX::initInterruptServices(void *that) {
 }
 
 uint16_t IGFX::configRead16(IORegistryEntry *service, uint32_t space, uint8_t offset) {
-	if (callbackIgfx) {
+	if (callbackIgfx && callbackIgfx->orgConfigRead16) {
 		auto result = callbackIgfx->orgConfigRead16(service, space, offset);
 		auto name = service->getName();
 		if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
-			DBGLOG("igfx", "configRead16 IGPU 0x%08X at off 0x%02X", space, offset);
+			DBGLOG("igfx", "configRead16 IGPU 0x%08X at off 0x%02X, result = 0x%04x", space, offset, result);
 
 			if (offset == WIOKit::kIOPCIConfigDeviceID) {
 				uint32_t device;
 				if (WIOKit::getOSDataValue(service, "device-id", device) && device != result) {
-					DBGLOG("igfx", "configRead16 IGPU reported 0x%04x insted of 0x%04x", device, result);
+					DBGLOG("igfx", "configRead16 IGPU reported 0x%04x instead of 0x%04x", device, result);
 					return device;
 				}
 			}
@@ -627,17 +638,17 @@ uint16_t IGFX::configRead16(IORegistryEntry *service, uint32_t space, uint8_t of
 }
 
 uint32_t IGFX::configRead32(IORegistryEntry *service, uint32_t space, uint8_t offset) {
-	if (callbackIgfx) {
+	if (callbackIgfx && callbackIgfx->orgConfigRead32) {
 		auto result = callbackIgfx->orgConfigRead32(service, space, offset);
 		auto name = service->getName();
 		if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
-			DBGLOG("igfx", "configRead32 IGPU name %s 0x%08X at off 0x%02X", safeString(name), space, offset);
+			DBGLOG("igfx", "configRead32 IGPU 0x%08X at off 0x%02X, result = 0x%08X", space, offset, result);
 			// According to lvs unaligned reads may happen
 			if (offset == WIOKit::kIOPCIConfigDeviceID || offset == WIOKit::kIOPCIConfigVendorID) {
 				uint32_t device;
 				if (WIOKit::getOSDataValue(service, "device-id", device) && device != (result & 0xFFFF)) {
-					device |= result & 0xFFFF0000;
-					DBGLOG("igfx", "configRead32 reported 0x%08x insted of 0x%08x", device, result);
+					device = (result & 0xFFFF) | (device << 16);
+					DBGLOG("igfx", "configRead32 reported 0x%08x instead of 0x%08x", device, result);
 					return device;
 				}
 			}
@@ -682,7 +693,7 @@ bool IGFX::doDmaTransfer(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t
 			DBGLOG("igfx", "doDmaTransfer dma_ctrl change to %08X", nstatus);
 		nstatus = status;
 
-		if ((status & START_DMA) != START_DMA)
+		if ((nstatus & START_DMA) != START_DMA)
 			break;
 
 		IOSleep(1);
@@ -889,8 +900,10 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 		patcher.clearError();
 	}
 
+	IOLockLock(access);
 	if (!doneCorrectingProperties)
 		correctDeviceProperties();
+	IOLockUnlock(access);
 }
 
 void IGFX::correctDeviceProperties() {
@@ -922,17 +935,16 @@ void IGFX::correctDeviceProperties() {
 							IORegistryEntry *gpuobj = nullptr;
 							while ((gpuobj = OSDynamicCast(IORegistryEntry, gpuiterator->getNextObject())) != nullptr) {
 								uint32_t gpuvendor = 0, gpucode = 0;
-								auto gpuname = gpuobj->getName();
-								DBGLOG("igfx", "found %s on pci bridge", safeString(gpuname));
+								DBGLOG("igfx", "found %s on pci bridge", safeString(gpuobj->getName()));
 								if (WIOKit::getOSDataValue(gpuobj, "vendor-id", gpuvendor) &&
 									WIOKit::getOSDataValue(gpuobj, "class-code", gpucode) &&
 									(gpucode == WIOKit::ClassCode::DisplayController || gpucode == WIOKit::ClassCode::VGAController)) {
 									if (gpuvendor == WIOKit::VendorID::ATIAMD) {
-										DBGLOG("igfx", "found AMD GPU device %s", gpuname);
+										DBGLOG("igfx", "found AMD GPU device %s", safeString(gpuobj->getName()));
 										hasExternalAMD = true;
 										break;
 									} else if (gpuvendor == WIOKit::VendorID::NVIDIA) {
-										DBGLOG("igfx", "found NVIDIA GPU device %s", gpuname);
+										DBGLOG("igfx", "found NVIDIA GPU device %s", safeString(gpuobj->getName()));
 										hasExternalNVIDIA = true;
 										break;
 									}
@@ -949,8 +961,9 @@ void IGFX::correctDeviceProperties() {
 						if (correctName) {
 							// IMEI is just right
 							foundIMEI = true;
-						} else if (!correctName && (code == 0x78000 || !strcmp(name, "HECI") || !strcmp(name, "MEI"))) {
-							// IMEI is improperly named or unnamed! 0x78000 is implementation defined, but works on HSW so far.
+						} else if (!correctName && (code == WIOKit::ClassCode::IMEI ||
+							(name && (!strcmp(name, "HECI") || !strcmp(name, "MEI"))))) {
+							// IMEI is improperly named or unnamed!
 							DBGLOG("igfx", "found invalid Intel ME device %s", safeString(name));
 							WIOKit::renameDevice(obj, "IMEI");
 							foundIMEI = true;
@@ -961,16 +974,20 @@ void IGFX::correctDeviceProperties() {
 							cpuGeneration == CPUInfo::CpuGeneration::IvyBridge) &&
 							WIOKit::getOSDataValue(obj, "device-id", device)) {
 							// Exotic cases like SNB CPU on 7-series motherboards or IVB CPU on 6-series
-							// require fake id faking. For now it is enough to simply set a compatible
-							// device-id value without any deep emulation.
-							if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge && device != 0x1C3A) {
-								DBGLOG("igfx", "fixing SNB IMEI device id 0x%04X to 0x1C3A", device);
-								device = 0x1C3A;
-								obj->setProperty("device-id", &device, sizeof(device));
-							} else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge && device != 0x1E3A) {
-								DBGLOG("igfx", "fixing SNB IMEI device id 0x%04X to 0x1E3A", device);
-								device = 0x1E3A;
-								obj->setProperty("device-id", &device, sizeof(device));
+							// require device-id faking. Unfortunately it is too late to change it at this step,
+							// because device matching happens earlier, but we will spill a warning to make sure
+							// one fixes them at device property or SSDT level.
+							uint32_t suggest = 0;
+							if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge && device != 0x1C3A)
+								suggest = 0x1C3A;
+							else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge && device != 0x1E3A)
+								suggest = 0x1E3A;
+
+							if (suggest != 0) {
+								uint8_t bus = 0, dev = 0, fun = 0;
+								WIOKit::getDeviceAddress(obj, bus, dev, fun);
+								SYSLOG("igfx", "IMEI device (%02X:%02X:%02X) has device-id 0x%04X, you should change it to 0x%04X",
+									   bus, dev, fun, device, suggest);
 							}
 						}
 					}
@@ -1013,17 +1030,19 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 		fakeDevice = acpiDevice;
 	}
 
-	if (PE_parse_boot_argn("igfxfake", &fakeDevice, sizeof(fakeDevice)))
-		DBGLOG("igfx", "user requested fake device-id %04X via boot-args", fakeDevice);
-
 	if (fakeDevice) {
 		if (fakeDevice != acpiDevice) {
-			DBGLOG("igfx", "replacing device-id property");
-			obj->setProperty("device-id", &fakeDevice, sizeof(fakeDevice));
+			uint8_t bus = 0, dev = 0, fun = 0;
+			WIOKit::getDeviceAddress(obj, bus, dev, fun);
+			SYSLOG("igfx", "IGPU device (%02X:%02X:%02X) has device-id 0x%04X, you should change it to 0x%04X",
+				   bus, dev, fun, acpiDevice, fakeDevice);
 		}
 		if (fakeDevice != realDevice) {
-			DBGLOG("igfx", "postponing configRead method hooks");
-			hookConfigReads = true;
+ 			if (KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead16, configRead16, &orgConfigRead16) &&
+				KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead32, configRead32, &orgConfigRead32))
+				DBGLOG("igfx", "hooked configRead read methods!");
+			else
+				SYSLOG("igfx", "failed to hook configRead read methods!");
 		}
 	}
 
@@ -1040,7 +1059,10 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 		if (platform != CPUInfo::DefaultInvalidPlatformId) {
 			connectorLessFrame = CPUInfo::isConnectorLessPlatformId(platform);
 		} else {
-			DBGLOG("igfx", "warning, no framebuffer id was found, falling back to defaults");
+			uint8_t bus = 0, dev = 0, fun = 0;
+			WIOKit::getDeviceAddress(obj, bus, dev, fun);
+			DBGLOG("igfx", "IGPU device (%02X:%02X:%02X) has no framebuffer id, falling back to defaults", bus, dev, fun);
+
 			// There is no connectorLess frame in Broadwerll
 			if ((hasExternalAMD || hasExternalNVIDIA) && cpuGeneration != CPUInfo::CpuGeneration::Broadwell) {
 				DBGLOG("igfx", "discovered external AMD or NVIDIA, using frame without connectors");
@@ -1088,6 +1110,7 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 			}
 
 			if (platform != CPUInfo::DefaultInvalidPlatformId) {
+				DBGLOG("igfx", "installing calculated default frame %08X", platform);
 				if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
 					obj->setProperty("AAPL,snb-platform-id", &platform, sizeof(platform));
 				else
@@ -1410,8 +1433,10 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 
 						if (decideLoadScheduler == ReferenceScheduler)
 							loadIGScheduler4Patches(patcher, index);
-						else
+#ifdef IGFX_APPLE_SCHEDULER
+						if (decideLoadScheduler == AppleScheduler || deviceLoadScheduler == AppleCustomScheduler)
 							loadIGGuCPatches(patcher, index);
+#endif
 					}
 
 					progressState |= ProcessingState::CallbackGuCFirmwareUpdateRouted;

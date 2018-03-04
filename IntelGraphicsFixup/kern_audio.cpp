@@ -88,15 +88,35 @@ IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
 		return nullptr;
 	}
 
+	bool isConnectorLess = IGFX::isConnectorLessFrame();
+
+	// There is no reason to spend power on HDAU when IGPU has no connectors
+	if (isConnectorLess && isDigital) {
+		auto pci = OSDynamicCast(IOService, hdaService->getParentEntry(gIOServicePlane));
+		if (pci) {
+			DBGLOG("igfx", "received digital audio parent %s", safeString(pci->getName()));
+			hdaService->stop(pci);
+			bool success = hdaService->terminate();
+			DBGLOG("igfx", "terminating digital audio %s (code %d)",
+				   safeString(hdaPlaneName), success);
+			// Only return after successful termination.
+			// Otherwise at least try to rename stuff.
+			if (success)
+				return nullptr;
+		} else {
+			SYSLOG("igfx", "failed to find digital audio parent for termination");
+		}
+	}
+
 	// AppleHDAController only recognises HDEF and HDAU.
 	if (isMislabeledDigital) {
 		DBGLOG("audio", "fixing audio plane name to HDAU");
 		WIOKit::renameDevice(hdaService, "HDAU");
 	}
-	
+
 	// hda-gfx allows to separate the devices, must be unique
 	// WhateverGreen and NvidiaGraphicsFixup use onboard-2 and so on for GFX.
-	if (!IGFX::isConnectorLessFrame()) {
+	if (!isConnectorLess) {
 		if (!hdaService->getProperty("hda-gfx")) {
 			// Haswell and Broadwell have a dedicated device for digital audio source.
 			auto gen = CPUInfo::getGeneration();

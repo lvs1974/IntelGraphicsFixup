@@ -183,7 +183,6 @@ private:
 	WIOKit::t_PCIConfigRead16 orgConfigRead16 {nullptr};
 	WIOKit::t_PCIConfigRead32 orgConfigRead32 {nullptr};
 
-
 	/**
 	 *  External global variables
 	 */
@@ -210,11 +209,13 @@ private:
 	 *  Scheduler types
 	 */
 	enum SchedulerDecision {
-		BasicScheduler = 0,
-		ReferenceScheduler = 1,
-		AppleScheduler = 2,
-		AppleCustomScheduler = 3,
-		TotalSchedulers = 4
+		BasicScheduler,
+		ReferenceScheduler,
+#ifdef IGFX_APPLE_SCHEDULER
+		AppleScheduler,
+		AppleCustomScheduler,
+#endif
+		TotalSchedulers
 	};
 
 	/**
@@ -265,11 +266,6 @@ private:
 	 *  connector-less frame
 	 */
 	bool connectorLessFrame {false};
-
-	/**
-	 *  Enables PCI device-id hooking
-	 */
-	bool hookConfigReads {false};
 
 	/**
 	 *  External GPU status
@@ -337,6 +333,11 @@ private:
 	 *  0 is HuC, 1 is GuC.
 	 */
 	int32_t currentDmaIndex {-1};
+    
+	/**
+	 *  Property injection lock
+	 */
+	IOLock *access {nullptr};
 
 	/**
 	 *  Decides on whether to intercept binary loading.

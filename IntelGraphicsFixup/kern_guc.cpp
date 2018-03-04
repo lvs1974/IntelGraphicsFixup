@@ -18473,6 +18473,8 @@ static const uint8_t GuCFirmwareKBLBlob[] {
     0xA7, 0x2A, 0xD1, 0xD1, 0x9E, 0xD0, 0x8F, 0xD7, 0xFC, 0x84, 0x8D, 0xC9, 0x6E, 0xCA, 0x0A, 0x5D 
 };
 
+#ifdef IGFX_APPLE_SCHEDULER
+
 static uint8_t HuCFirmwareSKLBlob[] {
     0x06, 0x00, 0x00, 0x00, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x86, 0x80, 0x00, 0x00, 0x22, 0x02, 0x16, 0x20, 0xF1, 0x89, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00,
@@ -40959,6 +40961,8 @@ static uint8_t HuCFirmwareKBLBlob[] {
     0x99, 0xA2, 0xCD, 0x79, 0x70, 0xFD, 0xB9, 0x58, 0xDF, 0xCA, 0x2E, 0x67, 0xE0, 0xFF, 0x31, 0x5E 
 };
 
+#endif
+
 const uint8_t *GuCFirmwareSKL = &GuCFirmwareSKLBlob[0];
 const size_t GuCFirmwareSKLSize = sizeof(GuCFirmwareSKLBlob) - GuCFirmwareSignatureSize;
 const uint8_t *GuCFirmwareSKLSignature = &GuCFirmwareSKLBlob[GuCFirmwareSKLSize];
@@ -40968,6 +40972,8 @@ const size_t GuCFirmwareKBLSize = sizeof(GuCFirmwareKBLBlob) - GuCFirmwareSignat
 const uint8_t *GuCFirmwareKBLSignature = &GuCFirmwareKBLBlob[GuCFirmwareKBLSize];
 
 
+#ifdef IGFX_APPLE_SCHEDULER
+
 const uint8_t *HuCFirmwareSKL = &HuCFirmwareSKLBlob[0];
 const size_t HuCFirmwareSKLSize = sizeof(HuCFirmwareSKLBlob) - HuCFirmwareSignatureSize;
 const uint8_t *HuCFirmwareSKLSignature = &HuCFirmwareSKLBlob[HuCFirmwareSKLSize];
@@ -40975,3 +40981,15 @@ const uint8_t *HuCFirmwareSKLSignature = &HuCFirmwareSKLBlob[HuCFirmwareSKLSize]
 const uint8_t *HuCFirmwareKBL = &HuCFirmwareKBLBlob[0];
 const size_t HuCFirmwareKBLSize = sizeof(HuCFirmwareKBLBlob) - HuCFirmwareSignatureSize;
 const uint8_t *HuCFirmwareKBLSignature = &HuCFirmwareKBLBlob[HuCFirmwareKBLSize];
+
+#else
+
+const uint8_t *HuCFirmwareSKL = nullptr;
+const size_t HuCFirmwareSKLSize = 0;
+const uint8_t *HuCFirmwareSKLSignature = nullptr;
+
+const uint8_t *HuCFirmwareKBL = nullptr;
+const size_t HuCFirmwareKBLSize = 0;
+const uint8_t *HuCFirmwareKBLSignature = nullptr;
+
+#endif
