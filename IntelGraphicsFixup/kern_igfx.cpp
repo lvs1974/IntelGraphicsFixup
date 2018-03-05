@@ -618,11 +618,10 @@ void IGFX::initInterruptServices(void *that) {
 uint16_t IGFX::configRead16(IORegistryEntry *service, uint32_t space, uint8_t offset) {
 	if (callbackIgfx && callbackIgfx->orgConfigRead16) {
 		auto result = callbackIgfx->orgConfigRead16(service, space, offset);
-		auto name = service->getName();
-		if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
-			DBGLOG("igfx", "configRead16 IGPU 0x%08X at off 0x%02X, result = 0x%04x", space, offset, result);
-
-			if (offset == WIOKit::kIOPCIConfigDeviceID) {
+		if (offset == WIOKit::kIOPCIConfigDeviceID && service != nullptr) {
+			auto name = service->getName();
+			if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
+				DBGLOG("igfx", "configRead16 IGPU 0x%08X at off 0x%02X, result = 0x%04x", space, offset, result);
 				uint32_t device;
 				if (WIOKit::getOSDataValue(service, "device-id", device) && device != result) {
 					DBGLOG("igfx", "configRead16 IGPU reported 0x%04x instead of 0x%04x", device, result);
@@ -640,11 +639,11 @@ uint16_t IGFX::configRead16(IORegistryEntry *service, uint32_t space, uint8_t of
 uint32_t IGFX::configRead32(IORegistryEntry *service, uint32_t space, uint8_t offset) {
 	if (callbackIgfx && callbackIgfx->orgConfigRead32) {
 		auto result = callbackIgfx->orgConfigRead32(service, space, offset);
-		auto name = service->getName();
-		if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
-			DBGLOG("igfx", "configRead32 IGPU 0x%08X at off 0x%02X, result = 0x%08X", space, offset, result);
-			// According to lvs unaligned reads may happen
-			if (offset == WIOKit::kIOPCIConfigDeviceID || offset == WIOKit::kIOPCIConfigVendorID) {
+		// According to lvs unaligned reads may happen
+		if ((offset == WIOKit::kIOPCIConfigDeviceID || offset == WIOKit::kIOPCIConfigVendorID) && service != nullptr) {
+			auto name = service->getName();
+			if (name && name[0] == 'I' && name[1] == 'G' && name[2] == 'P' && name[3] == 'U') {
+				DBGLOG("igfx", "configRead32 IGPU 0x%08X at off 0x%02X, result = 0x%08X", space, offset, result);
 				uint32_t device;
 				if (WIOKit::getOSDataValue(service, "device-id", device) && device != (result & 0xFFFF)) {
 					device = (result & 0xFFFF) | (device << 16);
