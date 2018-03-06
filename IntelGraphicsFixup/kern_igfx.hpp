@@ -18,12 +18,30 @@ public:
 	void deinit();
 
 	/**
+	 *  Lock device access
+	 */
+	static void lockDeviceAccess();
+
+	/**
+	 *  Unlock device access
+	 */
+	static void unlockDeviceAccess();
+
+	/**
 	 *  Check whether the frame has no connectors
 	 *
 	 *  @return true if offline
 	 */
 	static bool isConnectorLessFrame();
 
+	/**
+	 *  Inject IGPU properties and hooks (or terminate the device)
+	 *
+	 *  @param obj            HDAU device
+	 *  @param connectorLess  IGPU has connectors
+	 *  @param mislabeled     HDAU is mislabeled
+	 */
+	static void correctGraphicsAudioProperties(IORegistryEntry *obj, bool connectorLess, bool mislabeled);
 private:
 	/**
 	 *  Obtain necessary symbols from the kernel
@@ -64,12 +82,35 @@ private:
 	void correctDeviceProperties();
 
 	/**
+	 *  Iterate over I/O Registry and find the devices we care about.
+	 *
+	 *  @param igpu       IGPU device to look up
+	 *  @param imei       IMEI device to look up
+	 *  @param hdau       HDAU device to look up
+	 *  @param hasAMD     AMD GPU availability
+	 *  @param hasNVIDIA  NVIDIA GPU availability
+	 */
+	void getDeviceInfo(IORegistryEntry **igpu, IORegistryEntry **imei, IORegistryEntry **hdau, bool *hasAMD, bool *hasNVIDIA);
+
+	/**
+	 *  Obtain framebuffer identifier
+	 *
+	 *  @param igpu       IGPU device
+	 *  @param hasAMD     AMD device availability
+	 *  @param hasNVIDIA  NVIDIA device availability
+	 *  @param update     update IGPU device in igpu if necessary
+	 *
+	 *  @return framebuffer identifier or DefaultInvalidPlatformId
+	 */
+	uint32_t getFramebufferId(IORegistryEntry *igpu, bool hasAMD, bool hasNVIDIA, bool update=false);
+
+	/**
 	 *  Inject IGPU properties and hooks
 	 *
 	 *  @param obj   IGPU device
 	 *  @param name  IGPU device name
 	 */
-	void injectGraphicsProperties(IORegistryEntry *obj, const char *name);
+	void correctGraphicsProperties(IORegistryEntry *obj, const char *name);
 
 	/**
 	 *  PAVP session command type
@@ -256,11 +297,6 @@ private:
 	 *  vinfo presence status
 	 */
 	bool gotInfo {false};
-
-	/**
-	 *  Property correction status
-	 */
-	bool doneCorrectingProperties {false};
 
 	/**
 	 *  connector-less frame

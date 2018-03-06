@@ -59,11 +59,15 @@ IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
 		DBGLOG("audio", "received null digitial audio device");
 		return nullptr;
 	}
+
+	IGFX::lockDeviceAccess();
 	
 	uint32_t hdaVen, hdaDev;
 	if (!WIOKit::getOSDataValue(hdaService, "vendor-id", hdaVen) ||
-		!WIOKit::getOSDataValue(hdaService, "device-id", hdaDev)) {
-		SYSLOG("audio", "found an unknown device");
+		!WIOKit::getOSDataValue(hdaService, "device-id", hdaDev) ||
+		hdaVen != WIOKit::VendorID::Intel) {
+		SYSLOG("audio", "found an unsupported device");
+		IGFX::unlockDeviceAccess();
 		return nullptr;
 	}
 	
@@ -71,11 +75,6 @@ IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
 	DBGLOG("audio", "corrects digital audio for hdau at %s with %04X:%04X",
 		   safeString(hdaPlaneName), hdaVen, hdaDev);
 	
-	if (hdaVen != WIOKit::VendorID::Intel) {
-		DBGLOG("audio", "unsupported hdau vendor");
-		return nullptr;
-	}
-
 	// HDEF device seems to always exist, so it will be labeled.
 	// However, we will not touch mislabeled HDEF due to VoodooHDA.
 	// AppleALC will rename HDEF properly soon (just need a higher probe score).
@@ -85,67 +84,38 @@ IOService *IntelGraphicsAudio::probe(IOService *hdaService, SInt32 *score) {
 
 	if (!isDigital && !isAppleAnalog) {
 		DBGLOG("audio", "found voodoo-like analog audio, ignoring.");
+		IGFX::unlockDeviceAccess();
 		return nullptr;
 	}
 
 	bool isConnectorLess = IGFX::isConnectorLessFrame();
-
-	// There is no reason to spend power on HDAU when IGPU has no connectors
-	if (isConnectorLess && isDigital) {
-		auto pci = OSDynamicCast(IOService, hdaService->getParentEntry(gIOServicePlane));
-		if (pci) {
-			DBGLOG("igfx", "received digital audio parent %s", safeString(pci->getName()));
-			hdaService->stop(pci);
-			bool success = hdaService->terminate();
-			DBGLOG("igfx", "terminating digital audio %s (code %d)",
-				   safeString(hdaPlaneName), success);
-			// Only return after successful termination.
-			// Otherwise at least try to rename stuff.
-			if (success)
-				return nullptr;
-		} else {
-			SYSLOG("igfx", "failed to find digital audio parent for termination");
-		}
-	}
-
-	// AppleHDAController only recognises HDEF and HDAU.
-	if (isMislabeledDigital) {
-		DBGLOG("audio", "fixing audio plane name to HDAU");
-		WIOKit::renameDevice(hdaService, "HDAU");
-	}
-
-	// hda-gfx allows to separate the devices, must be unique
-	// WhateverGreen and NvidiaGraphicsFixup use onboard-2 and so on for GFX.
-	if (!isConnectorLess) {
-		if (!hdaService->getProperty("hda-gfx")) {
+	if (isDigital) {
+		IGFX::correctGraphicsAudioProperties(hdaService, isConnectorLess, isMislabeledDigital);
+	} else {
+		// hda-gfx allows to separate the devices, it must be unique.
+		// WhateverGreen and NvidiaGraphicsFixup use onboard-2 and so on for GFX.
+		if (!isConnectorLess) {
 			// Haswell and Broadwell have a dedicated device for digital audio source.
 			auto gen = CPUInfo::getGeneration();
-			if (isDigital || (gen != CPUInfo::CpuGeneration::Haswell && gen != CPUInfo::CpuGeneration::Broadwell))
-				hdaService->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
-		} else {
-			DBGLOG("audio", "existing hda-gfx, assuming complete inject");
-		}
-
-		// layout-id is heard to be required in rare cases
-		if (!isAppleAnalog) {
-			if (!hdaService->getProperty("layout-id")) {
-				DBGLOG("audio", "fixing layout-id in hdau");
-				uint32_t layout = getAnalogLayout();
-				hdaService->setProperty("layout-id", &layout, sizeof(layout));
-			} else {
-				DBGLOG("audio", "found existing layout-id in hdau");
+			if (gen != CPUInfo::CpuGeneration::Haswell && gen != CPUInfo::CpuGeneration::Broadwell) {
+				if (!hdaService->getProperty("hda-gfx"))
+					hdaService->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
+				else
+					DBGLOG("audio", "existing hda-gfx, assuming complete inject");
 			}
 		}
+
+		// built-in is required for non-renamed devices
+		if (!hdaService->getProperty("built-in")) {
+			DBGLOG("audio", "fixing built-in in hdau");
+			uint8_t builtBytes[] { 0x00 };
+			hdaService->setProperty("built-in", builtBytes, sizeof(builtBytes));
+		} else {
+			DBGLOG("audio", "found existing built-in in hdau");
+		}
 	}
 
-	// built-in is required for non-renamed devices
-	if (!hdaService->getProperty("built-in")) {
-		DBGLOG("audio", "fixing built-in in hdau");
-		uint8_t builtBytes[] { 0x00 };
-		hdaService->setProperty("built-in", builtBytes, sizeof(builtBytes));
-	} else {
-		DBGLOG("audio", "found existing built-in in hdau");
-	}
+	IGFX::unlockDeviceAccess();
 
 	return nullptr;
 }

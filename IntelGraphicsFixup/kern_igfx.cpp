@@ -62,7 +62,7 @@ static size_t kextListSize = arrsize(kextList);
 
 bool IGFX::init() {
 	access = IOLockAlloc();
-    
+
 	PE_parse_boot_argn("igfxrst", &resetFramebuffer, sizeof(resetFramebuffer));
 	PE_parse_boot_argn("igfxfw", &decideLoadScheduler, sizeof(decideLoadScheduler));
 
@@ -135,7 +135,7 @@ bool IGFX::init() {
 		return false;
 	}
 
-	callbackIgfx = static_cast<IGFX *>(this);
+	callbackIgfx = this;
 
 	error = lilu.onKextLoad(kextList, kextListSize, [](void *user, KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
 		callbackPatcher = &patcher;
@@ -157,19 +157,83 @@ void IGFX::deinit() {
 	}
 }
 
+void IGFX::lockDeviceAccess() {
+	if (callbackIgfx && callbackIgfx->access)
+		IOLockLock(callbackIgfx->access);
+	// Panic otherwise?
+}
+
+void IGFX::unlockDeviceAccess() {
+	if (callbackIgfx && callbackIgfx->access)
+		IOLockUnlock(callbackIgfx->access);
+	// Panic otherwise?
+}
+
 bool IGFX::isConnectorLessFrame() {
 	DBGLOG("igfx", "checking frame connectors");
-	if (callbackIgfx && callbackIgfx->access) {
-		IOLockLock(callbackIgfx->access);
-		if (!callbackIgfx->doneCorrectingProperties) {
-			DBGLOG("igfx", "correcting device properties on audio request");
-			callbackIgfx->correctDeviceProperties();
+	if (callbackIgfx) {
+		IORegistryEntry *igpu = nullptr;
+		bool hasAMD = false, hasNVIDIA = false;
+		callbackIgfx->getDeviceInfo(&igpu, nullptr, nullptr, &hasAMD, &hasNVIDIA);
+		if (igpu) {
+			auto frame = callbackIgfx->getFramebufferId(igpu, hasAMD, hasNVIDIA);
+			DBGLOG("igfx", "received igpu and amd %d nvidia %d frame %08X", hasAMD, hasNVIDIA, frame);
+			return CPUInfo::isConnectorLessPlatformId(frame);
 		}
-		IOLockUnlock(callbackIgfx->access);
-		DBGLOG("igfx", "connector-less frame is %d", callbackIgfx->connectorLessFrame);
-		return callbackIgfx->connectorLessFrame;
 	}
 	return false;
+}
+
+void IGFX::correctGraphicsAudioProperties(IORegistryEntry *obj, bool connectorLess, bool mislabeled) {
+	auto hda = OSDynamicCast(IOService, obj);
+	if (!hda) {
+		SYSLOG("igfx", "incompatible hdau discovered");
+		return;
+	}
+
+	if (connectorLess) {
+		auto pci = OSDynamicCast(IOService, obj->getParentEntry(gIOServicePlane));
+		if (pci) {
+			DBGLOG("igfx", "received digital audio parent %s", safeString(pci->getName()));
+			hda->stop(pci);
+			bool success = hda->terminate();
+			DBGLOG("igfx", "terminating digital audio with status %d", success);
+			// Only return after successful termination.
+			// Otherwise at least try to rename stuff.
+			if (success)
+				return;
+		} else {
+			SYSLOG("igfx", "failed to find digital audio parent for termination");
+		}
+	}
+
+	if (mislabeled) {
+		DBGLOG("igfx", "fixing audio plane name to HDAU");
+		WIOKit::renameDevice(obj, "HDAU");
+	}
+
+	if (!hda->getProperty("hda-gfx"))
+		hda->setProperty("hda-gfx", OSData::withBytes("onboard-1", sizeof("onboard-1")));
+	else
+		DBGLOG("igfx", "existing hda-gfx, assuming partial inject");
+
+	// layout-id is heard to be required in rare cases
+	if (!hda->getProperty("layout-id")) {
+		auto layout = IntelGraphicsAudio::getAnalogLayout();
+		DBGLOG("igfx", "fixing layout-id to %d in hdau", layout);
+		hda->setProperty("layout-id", &layout, sizeof(layout));
+	} else {
+		DBGLOG("igfx", "found existing layout-id in hdau");
+	}
+
+	// built-in is required for non-renamed devices
+	if (!hda->getProperty("built-in")) {
+		DBGLOG("igfx", "fixing built-in in hdau");
+		uint8_t builtBytes[] { 0x00 };
+		hda->setProperty("built-in", builtBytes, sizeof(builtBytes));
+	} else {
+		DBGLOG("igfx", "found existing built-in in hdau");
+	}
 }
 
 uint32_t IGFX::pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t sessionCommand, uint32_t sessionAppId, uint32_t *a4, bool flag) {
@@ -899,35 +963,34 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 		patcher.clearError();
 	}
 
-	IOLockLock(access);
-	if (!doneCorrectingProperties)
-		correctDeviceProperties();
-	IOLockUnlock(access);
+	lockDeviceAccess();
+	correctDeviceProperties();
+	unlockDeviceAccess();
 }
 
-void IGFX::correctDeviceProperties() {
+void IGFX::getDeviceInfo(IORegistryEntry **igpu, IORegistryEntry **imei, IORegistryEntry **hdau, bool *hasAMD, bool *hasNVIDIA) {
+	// Ensure the values are initialised
+	if (igpu) *igpu = nullptr;
+	if (imei) *imei = nullptr;
+	if (hdau) *hdau = nullptr;
+	if (hasAMD) *hasAMD = false;
+	if (hasNVIDIA) *hasNVIDIA = false;
+
 	// Detect all the devices
 	auto sect = WIOKit::findEntryByPrefix("/AppleACPIPlatformExpert", "PCI", gIOServicePlane);
 	if (sect) sect = WIOKit::findEntryByPrefix(sect, "AppleACPIPCI", gIOServicePlane);
 	if (sect) {
-		bool foundIMEI = false, foundIGPU = false;
 		auto iterator = sect->getChildIterator(gIOServicePlane);
 		if (iterator) {
-			IORegistryEntry *obj = nullptr, *igpu = nullptr;
+			IORegistryEntry *obj = nullptr;
 			while ((obj = OSDynamicCast(IORegistryEntry, iterator->getNextObject())) != nullptr) {
 				uint32_t vendor = 0, code = 0;
 				if (WIOKit::getOSDataValue(obj, "vendor-id", vendor) && vendor == WIOKit::VendorID::Intel &&
 					WIOKit::getOSDataValue(obj, "class-code", code)) {
 					auto name = obj->getName();
-					if (!foundIGPU && (code == WIOKit::ClassCode::DisplayController ||
-					   code == WIOKit::ClassCode::VGAController)) {
-						// We defer IGPU property injection here to firstly detect discrete GPUs.
-						igpu = obj;
-						foundIGPU = true;
-						continue;
-					}
-
-					if (code == WIOKit::ClassCode::PCIBridge) {
+					if (igpu && (code == WIOKit::ClassCode::DisplayController || code == WIOKit::ClassCode::VGAController)) {
+						*igpu = obj;
+					} else if ((hasAMD || hasNVIDIA) && code == WIOKit::ClassCode::PCIBridge) {
 						DBGLOG("igfx", "found pci bridge %s", safeString(name));
 						auto gpuiterator = IORegistryIterator::iterateOver(obj, gIOServicePlane, kIORegistryIterateRecursively);
 						if (gpuiterator) {
@@ -940,132 +1003,94 @@ void IGFX::correctDeviceProperties() {
 									(gpucode == WIOKit::ClassCode::DisplayController || gpucode == WIOKit::ClassCode::VGAController)) {
 									if (gpuvendor == WIOKit::VendorID::ATIAMD) {
 										DBGLOG("igfx", "found AMD GPU device %s", safeString(gpuobj->getName()));
-										hasExternalAMD = true;
+										if (hasAMD) *hasAMD = true;
 										break;
 									} else if (gpuvendor == WIOKit::VendorID::NVIDIA) {
 										DBGLOG("igfx", "found NVIDIA GPU device %s", safeString(gpuobj->getName()));
-										hasExternalNVIDIA = true;
+										if (hasNVIDIA) *hasNVIDIA = true;
 										break;
 									}
 								}
 							}
-
 							gpuiterator->release();
 						}
-					}
-
-					if (!foundIMEI) {
+					} else if (imei && (code == WIOKit::ClassCode::IMEI || (name &&
+						(!strcmp(name, "IMEI") || !strcmp(name, "HECI") || !strcmp(name, "MEI"))))) {
 						// Fortunately IMEI is always made by Intel
-						bool correctName = name && !strcmp(name, "IMEI");
-						if (correctName) {
-							// IMEI is just right
-							foundIMEI = true;
-						} else if (!correctName && (code == WIOKit::ClassCode::IMEI ||
-							(name && (!strcmp(name, "HECI") || !strcmp(name, "MEI"))))) {
-							// IMEI is improperly named or unnamed!
-							DBGLOG("igfx", "found invalid Intel ME device %s", safeString(name));
-							WIOKit::renameDevice(obj, "IMEI");
-							foundIMEI = true;
-						}
-
-						uint32_t device = 0;
-						if (foundIMEI && (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge ||
-							cpuGeneration == CPUInfo::CpuGeneration::IvyBridge) &&
-							WIOKit::getOSDataValue(obj, "device-id", device)) {
-							// Exotic cases like SNB CPU on 7-series motherboards or IVB CPU on 6-series
-							// require device-id faking. Unfortunately it is too late to change it at this step,
-							// because device matching happens earlier, but we will spill a warning to make sure
-							// one fixes them at device property or SSDT level.
-							uint32_t suggest = 0;
-							if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge && device != 0x1C3A)
-								suggest = 0x1C3A;
-							else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge && device != 0x1E3A)
-								suggest = 0x1E3A;
-
-							if (suggest != 0) {
-								uint8_t bus = 0, dev = 0, fun = 0;
-								WIOKit::getDeviceAddress(obj, bus, dev, fun);
-								SYSLOG("igfx", "IMEI device (%02X:%02X.%02X) has device-id 0x%04X, you should change it to 0x%04X",
-									   bus, dev, fun, device, suggest);
-							}
-						}
+						DBGLOG("igfx", "found IMEI device %s", safeString(name));
+						*imei = obj;
+					} else if (hdau && name && (!strcmp(name, "HDAU") || !strcmp(name, "B0D3"))) {
+						DBGLOG("igfx", "found HDAU device %s", safeString(name));
+						*hdau = obj;
 					}
 				}
 			}
 
-			if (foundIGPU && igpu)
-				injectGraphicsProperties(igpu, igpu->getName());
-
 			iterator->release();
 		}
 	}
-
-	doneCorrectingProperties = true;
 }
 
-void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
-	DBGLOG("igfx", "found Intel GPU device %s", safeString(name));
-	if (!name || strcmp(name, "IGPU"))
-		WIOKit::renameDevice(obj, "IGPU");
+void IGFX::correctDeviceProperties() {
+	// Detect all the devices
+	IORegistryEntry *igpu = nullptr, *imei = nullptr, *hdau = nullptr;
+	getDeviceInfo(&igpu, &imei, &hdau, &hasExternalAMD, &hasExternalNVIDIA);
 
-	// Model and ID fixes
-	uint32_t realDevice = WIOKit::readPCIConfigValue(obj, WIOKit::kIOPCIConfigDeviceID);
-	uint32_t acpiDevice = 0, fakeDevice = 0;
+	if (igpu)
+		correctGraphicsProperties(igpu, igpu->getName());
 
-	if (!WIOKit::getOSDataValue(obj, "device-id", acpiDevice))
-		DBGLOG("igfx", "missing IGPU device-id");
-
-	auto model = getModelName(realDevice, fakeDevice);
-	DBGLOG("igfx", "IGPU has real %04X acpi %04X fake %04X and model %s",
-		   realDevice, acpiDevice, fakeDevice, safeString(model));
-
-	if (model && !obj->getProperty("model")) {
-		DBGLOG("igfx", "adding missing model from autotodetect");
-		obj->setProperty("model", const_cast<char *>(model), static_cast<unsigned>(strlen(model)+1));
+	if (hdau) {
+		// Haswell and Broadwell have a dedicated device for digital audio source.
+		// In some cases HDAU probing may fail to detect external GPUs.
+		// Here we try to workaround it by redoing property correction.
+		auto name = hdau->getName();
+		correctGraphicsAudioProperties(hdau, connectorLessFrame, !name || strcmp(name, "HDAU"));
 	}
 
-	if (realDevice != acpiDevice) {
-		DBGLOG("igfx", "user requested to fake with normal device-id");
-		fakeDevice = acpiDevice;
-	}
+	if (imei) {
+		auto name = imei->getName();
+		// Rename mislabeled IMEI device
+		if (!name || strcmp(name, "IMEI"))
+			WIOKit::renameDevice(imei, "IMEI");
 
-	if (fakeDevice) {
-		if (fakeDevice != acpiDevice) {
-			uint8_t bus = 0, dev = 0, fun = 0;
-			WIOKit::getDeviceAddress(obj, bus, dev, fun);
-			SYSLOG("igfx", "IGPU device (%02X:%02X.%02X) has device-id 0x%04X, you should change it to 0x%04X",
-				   bus, dev, fun, acpiDevice, fakeDevice);
+		uint32_t device = 0;
+		if ((cpuGeneration == CPUInfo::CpuGeneration::SandyBridge ||
+			cpuGeneration == CPUInfo::CpuGeneration::IvyBridge) &&
+			WIOKit::getOSDataValue(imei, "device-id", device)) {
+			// Exotic cases like SNB CPU on 7-series motherboards or IVB CPU on 6-series
+			// require device-id faking. Unfortunately it is too late to change it at this step,
+			// because device matching happens earlier, but we will spill a warning to make sure
+			// one fixes them at device property or ACPI level.
+			uint32_t suggest = 0;
+			if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge && device != 0x1C3A)
+				suggest = 0x1C3A;
+			else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge && device != 0x1E3A)
+				suggest = 0x1E3A;
+
+			if (suggest != 0) {
+				uint8_t bus = 0, dev = 0, fun = 0;
+				WIOKit::getDeviceAddress(imei, bus, dev, fun);
+				SYSLOG("igfx", "IMEI device (%02X:%02X.%02X) has device-id 0x%04X, you should change it to 0x%04X",
+					   bus, dev, fun, device, suggest);
+			}
 		}
-		if (fakeDevice != realDevice) {
- 			if (KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead16, configRead16, &orgConfigRead16) &&
-				KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead32, configRead32, &orgConfigRead32))
-				DBGLOG("igfx", "hooked configRead read methods!");
-			else
-				SYSLOG("igfx", "failed to hook configRead read methods!");
-		}
 	}
+}
 
-	// Framebuffer fixes
-	uint32_t platform = 0;
+uint32_t IGFX::getFramebufferId(IORegistryEntry *igpu, bool hasAMD, bool hasNVIDIA, bool update) {
+	uint32_t platform = CPUInfo::DefaultInvalidPlatformId;
 	if (PE_parse_boot_argn("igfxframe", &platform, sizeof(platform))) {
 		SYSLOG("igfx", "found TEST frame override %08X", platform);
-		if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
-			obj->setProperty("AAPL,snb-platform-id", &platform, sizeof(platform));
-		else
-			obj->setProperty("AAPL,ig-platform-id", &platform, sizeof(platform));
 	} else {
-		platform = CPUInfo::getGpuPlatformId(obj);
-		if (platform != CPUInfo::DefaultInvalidPlatformId) {
-			connectorLessFrame = CPUInfo::isConnectorLessPlatformId(platform);
-		} else {
+		platform = CPUInfo::getGpuPlatformId(igpu);
+		if (platform == CPUInfo::DefaultInvalidPlatformId) {
 			uint8_t bus = 0, dev = 0, fun = 0;
-			WIOKit::getDeviceAddress(obj, bus, dev, fun);
+			WIOKit::getDeviceAddress(igpu, bus, dev, fun);
 			DBGLOG("igfx", "IGPU device (%02X:%02X.%02X) has no framebuffer id, falling back to defaults", bus, dev, fun);
 
 			// There is no connectorLess frame in Broadwerll
-			if ((hasExternalAMD || hasExternalNVIDIA) && cpuGeneration != CPUInfo::CpuGeneration::Broadwell) {
+			if ((hasAMD || hasNVIDIA) && cpuGeneration != CPUInfo::CpuGeneration::Broadwell) {
 				DBGLOG("igfx", "discovered external AMD or NVIDIA, using frame without connectors");
-				connectorLessFrame = true;
 				if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
 					platform = CPUInfo::ConnectorLessSandyBridgePlatformId1;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge)
@@ -1107,18 +1132,67 @@ void IGFX::injectGraphicsProperties(IORegistryEntry *obj, const char *name) {
 						platform = CPUInfo::DefaultKabyLakePlatformId;
 				}
 			}
-
-			if (platform != CPUInfo::DefaultInvalidPlatformId) {
-				DBGLOG("igfx", "installing calculated default frame %08X", platform);
-				if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
-					obj->setProperty("AAPL,snb-platform-id", &platform, sizeof(platform));
-				else
-					obj->setProperty("AAPL,ig-platform-id", &platform, sizeof(platform));
-			} else {
-				SYSLOG("igfx", "unsupported cpu generation has no frame id, this is likely an error!");
-			}
 		}
 	}
+
+	if (update) {
+		if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
+			igpu->setProperty("AAPL,snb-platform-id", &platform, sizeof(platform));
+		else
+			igpu->setProperty("AAPL,ig-platform-id", &platform, sizeof(platform));
+	}
+
+	return platform;
+}
+
+void IGFX::correctGraphicsProperties(IORegistryEntry *obj, const char *name) {
+	DBGLOG("igfx", "found Intel GPU device %s", safeString(name));
+	if (!name || strcmp(name, "IGPU"))
+		WIOKit::renameDevice(obj, "IGPU");
+
+	// Model and ID fixes
+	uint32_t realDevice = WIOKit::readPCIConfigValue(obj, WIOKit::kIOPCIConfigDeviceID);
+	uint32_t acpiDevice = 0, fakeDevice = 0;
+
+	if (!WIOKit::getOSDataValue(obj, "device-id", acpiDevice))
+		DBGLOG("igfx", "missing IGPU device-id");
+
+	auto model = getModelName(realDevice, fakeDevice);
+	DBGLOG("igfx", "IGPU has real %04X acpi %04X fake %04X and model %s",
+		   realDevice, acpiDevice, fakeDevice, safeString(model));
+
+	if (model && !obj->getProperty("model")) {
+		DBGLOG("igfx", "adding missing model %s from autotodetect", model);
+		obj->setProperty("model", const_cast<char *>(model), static_cast<unsigned>(strlen(model)+1));
+	}
+
+	if (realDevice != acpiDevice) {
+		DBGLOG("igfx", "user requested to fake with normal device-id");
+		fakeDevice = acpiDevice;
+	}
+
+	if (fakeDevice) {
+		if (fakeDevice != acpiDevice) {
+			uint8_t bus = 0, dev = 0, fun = 0;
+			WIOKit::getDeviceAddress(obj, bus, dev, fun);
+			SYSLOG("igfx", "IGPU device (%02X:%02X.%02X) has device-id 0x%04X, you should change it to 0x%04X",
+				   bus, dev, fun, acpiDevice, fakeDevice);
+		}
+		if (fakeDevice != realDevice) {
+ 			if (KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead16, configRead16, &orgConfigRead16) &&
+				KernelPatcher::routeVirtual(obj, WIOKit::PCIConfigOffset::ConfigRead32, configRead32, &orgConfigRead32))
+				DBGLOG("igfx", "hooked configRead read methods!");
+			else
+				SYSLOG("igfx", "failed to hook configRead read methods!");
+		}
+	}
+
+	// Framebuffer fixes
+	uint32_t platform = getFramebufferId(obj, hasExternalAMD, hasExternalNVIDIA, true);
+	if (platform != CPUInfo::DefaultInvalidPlatformId)
+		connectorLessFrame = CPUInfo::isConnectorLessPlatformId(platform);
+	else
+		SYSLOG("igfx", "unsupported cpu generation has no frame id, this is likely an error!");
 
 	// HDMI audio fixes
 	if (!connectorLessFrame) {

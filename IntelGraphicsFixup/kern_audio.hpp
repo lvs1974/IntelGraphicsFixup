@@ -15,8 +15,8 @@
 
 class EXPORT IntelGraphicsAudio : public IOService {
 	OSDeclareDefaultStructors(IntelGraphicsAudio)
-	uint32_t getAnalogLayout();
 public:
+	static uint32_t getAnalogLayout();
 	IOService *probe(IOService *provider, SInt32 *score) override;
 };
 
