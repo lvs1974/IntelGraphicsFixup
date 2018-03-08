@@ -205,6 +205,9 @@ struct ConnectorInfo {
      * The result will be 2 framebuffers which types and the second busId will be shifted:
      * 0 - busId 4 type DP
      * 1 - busId 6 type HDMI
+     * It is also used for port-number calculation.
+     * - LVDS displays (more precisely, displays with CNConnectorAlwaysConnected flag set) get port-number 0.
+     * - Other displays go through index - port-number mapping: 1 - 5, 2 - 6, 3 - 7, or fallback to 0.
      */
     uint8_t index;
     /* Proven by AppleIntelFramebufferController::MapFBToPort, by a call to AppleIntelFramebufferController::getGMBusIDfromPort.
