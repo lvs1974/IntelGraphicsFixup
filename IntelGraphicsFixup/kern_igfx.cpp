@@ -1092,7 +1092,13 @@ uint32_t IGFX::getFramebufferId(IORegistryEntry *igpu, bool hasAMD, bool hasNVID
 	if (PE_parse_boot_argn("igfxframe", &platform, sizeof(platform))) {
 		SYSLOG("igfx", "found TEST frame override %08X", platform);
 	} else {
-		platform = CPUInfo::getGpuPlatformId(igpu);
+		bool specified = false;
+		platform = CPUInfo::getGpuPlatformId(igpu, &specified);
+		if (!specified && (cpuGeneration == CPUInfo::CpuGeneration::Skylake ||
+			cpuGeneration == CPUInfo::CpuGeneration::KabyLake)) {
+			DBGLOG("igfx", "discarding default framebuffer for SKL/KBL in favour of our own");
+			platform = CPUInfo::DefaultInvalidPlatformId;
+		}
 		if (platform == CPUInfo::DefaultInvalidPlatformId) {
 			uint8_t bus = 0, dev = 0, fun = 0;
 			WIOKit::getDeviceAddress(igpu, bus, dev, fun);
