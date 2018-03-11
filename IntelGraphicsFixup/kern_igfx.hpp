@@ -178,7 +178,7 @@ private:
 	 */
 	static uint32_t pavpSessionCallback(void *intelAccelerator, PAVPSessionCommandID_t passed_session_cmd, uint32_t a3, uint32_t *a4, bool passed_flag);
 	static void frameBufferInit(void *that);
-	static bool computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count);
+	static bool computeLaneCount(void *that, void *timing, unsigned int bpp, int availableLanes, int *laneCount);
 	static bool intelGraphicsStart(IOService *that, IOService *provider);
 	static bool loadGuCBinary(void *that, bool flag);
 	static bool loadFirmware(IOService *that);

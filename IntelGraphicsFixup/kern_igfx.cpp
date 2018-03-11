@@ -321,16 +321,26 @@ void IGFX::frameBufferInit(void *that) {
 	}
 }
 
-bool IGFX::computeLaneCount(void *that, void *unk1, unsigned int bpp, int unk3, int *lane_count) {
-	// unk3 is read in AppleIntelFramebufferController::GetDPCDInfo
-	DBGLOG("igfx", "computeLaneCount: bpp = %d, unk3 = %d", bpp, unk3); // 24 0
+bool IGFX::computeLaneCount(void *that, void *timing, unsigned int bpp, int availableLanes, int *laneCount) {
+	DBGLOG("igfx", "computeLaneCount: bpp = %d, available = %d", bpp, availableLanes);
 
 	bool r = false;
 	if (callbackIgfx) {
-		// HD 530 reports to have 0 lanes max
-		r = callbackIgfx->orgComputeLaneCount(that, unk1, bpp, unk3, lane_count);
-		// We do not need this hack when we have no connectors
-		if (!callbackIgfx->connectorLessFrame && !r && *lane_count == 0) {
+		// It seems that AGDP fails to properly detect external boot monitors. As a result computeLaneCount
+		// is mistakengly called for any boot monitor (e.g. HDMI/DVI), while it is only meant to be used for
+		// DP (eDP) displays. More details could be found at:
+		// https://github.com/vit9696/Lilu/issues/27#issuecomment-372103559
+		// Since the only problematic function is AppleIntelFramebuffer::validateDetailedTiming, there are
+		// multiple ways to workaround it.
+		// 1. In 10.13.4 Apple added an additional extended timing validation call, which happened to be 
+		// guardded by a HDMI 2.0 enable boot-arg, which resulted in one bug fixing the other.
+		// 2. Another good way is to intercept AppleIntelFramebufferController::RegisterAGDCCallback and
+		// make sure AppleGraphicsDevicePolicy::_VendorEventHandler returns mode 2 (not 0) for event 10.
+		// 3. Disabling AGDC by nopping AppleIntelFramebufferController::RegisterAGDCCallback is also fine.
+		// Simply returning true from computeLaneCount and letting 0 to be compared against zero so far was
+		// least destructive and most reliable. Let's stick with it until we could solve more problems.
+		r = callbackIgfx->orgComputeLaneCount(that, timing, bpp, availableLanes, laneCount);
+		if (!callbackIgfx->connectorLessFrame && !r && *laneCount == 0) {
 			DBGLOG("igfx", "reporting worked lane count");
 			r = true;
 		}
