@@ -135,6 +135,10 @@ union FramebufferFlags {
 /* This is the same as ATI/AMD code.
  * At this moment only 2, 4, 0x400, and 0x800 are somewhat supported.
  * Interestingly connector type is not so important nowadays, e.g. VGA works fine on Kaby on DP.
+ * As of SKL and newer ConnectorType is converted to fPortType by the following algo:
+ * - connector with zero index (LVDS) gets fPortType 3.
+ * - connector with ConnectorHDMI type gets fPortType 1.
+ * - otherwise a connector has fPortType 2 (DisplayPort-like).
  */
 enum <uint32_t> ConnectorType {
     ConnectorZero       = 0x0,
@@ -152,6 +156,7 @@ enum <uint32_t> ConnectorType {
 
 union ConnectorFlags {
     struct ConnectorFlagBits {
+        /* Bits 1, 2, 8 are mentioned in AppleIntelFramebufferController::GetGPUCapability */
         /* Lets apperture memory to be not required AppleIntelFramebuffer::isApertureMemoryRequired */
         uint8_t CNAlterAppertureRequirements :1;  /* 0x1 */
         uint8_t CNUnknownFlag_2              :1;  /* 0x2 */
