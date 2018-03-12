@@ -1104,19 +1104,21 @@ uint32_t IGFX::getFramebufferId(IORegistryEntry *igpu, bool hasAMD, bool hasNVID
 			WIOKit::getDeviceAddress(igpu, bus, dev, fun);
 			DBGLOG("igfx", "IGPU device (%02X:%02X.%02X) has no framebuffer id, falling back to defaults", bus, dev, fun);
 
-			// There is no connectorLess frame in Broadwerll
+			// There is no connector-less frame in Broadwerll
 			if ((hasAMD || hasNVIDIA) && cpuGeneration != CPUInfo::CpuGeneration::Broadwell) {
 				DBGLOG("igfx", "discovered external AMD or NVIDIA, using frame without connectors");
+				// Note, that setting non-standard connector-less frame may result in 2 GPUs visible
+				// in System Report for whatever reason (at least on KabyLake).
 				if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
 					platform = CPUInfo::ConnectorLessSandyBridgePlatformId1;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge)
-					platform = CPUInfo::ConnectorLessIvyBridgePlatformId1;
+					platform = CPUInfo::ConnectorLessIvyBridgePlatformId2;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::Haswell)
 					platform = CPUInfo::ConnectorLessHaswellPlatformId1;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::Skylake)
-					platform = CPUInfo::ConnectorLessSkylakePlatformId1;
+					platform = CPUInfo::ConnectorLessSkylakePlatformId3;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::KabyLake)
-					platform = CPUInfo::ConnectorLessKabyLakePlatformId1;
+					platform = CPUInfo::ConnectorLessKabyLakePlatformId2;
 			} else {
 				// These are really failsafe defaults, you should NOT rely on them.
 				auto model = WIOKit::getComputerModel();

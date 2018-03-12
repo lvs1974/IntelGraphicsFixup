@@ -60,3 +60,7 @@ IntelGraphicsFixup Changelog
 - Fix booting without `-disablegfxfirmware` boot argument on KBL GPUs
 - Fix compatibility with connector-less frames
 - Minor performance improvements
+
+#### v1.2.6
+- Fix Skylake and KabyLake automatic framebuffer detection
+- Ensure standard connector-less framebuffers are used
