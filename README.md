@@ -31,4 +31,4 @@ Add `igfxframe=frame` to inject a dedicated framebuffer identifier into IGPU (on
 - [lvs1974](https://applelife.ru/members/lvs1974.53809/) for writing the software and maintaining it
 - [Vandroiy](https://github.com/vandroiy2013) for testing & frame buffer fix for Kaby Lake and Azul
 - [PMheart](https://github.com/PMheart) for writing the fix for HD4000
-- [syscl](https://github.com/syscl) for writing the fix for HD3000
+- [syscl](https://github.com/syscl) for writing the fix for HD3000, adding support for HD P630, UHD620, HD610
