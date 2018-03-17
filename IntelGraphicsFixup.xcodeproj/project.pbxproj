@@ -18,6 +18,7 @@
 		CE405EC91E49DD9700AA0B3D /* libkmod.a in Frameworks */ = {isa = PBXBuildFile; fileRef = CE405EC71E49DD7100AA0B3D /* libkmod.a */; };
 		CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE405ED81E4A080700AA0B3D /* plugin_start.cpp */; };
 		CE6A853D203AB2D200B8FFFA /* kern_guc.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */; };
+		F633AE28205D4EE5005FCD5D /* ISSUE_TEMPLATE.md in Resources */ = {isa = PBXBuildFile; fileRef = F633AE27205D4EE5005FCD5D /* ISSUE_TEMPLATE.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -64,6 +65,7 @@
 		CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = kern_guc.cpp; sourceTree = "<group>"; };
 		CE6A853E203AB2ED00B8FFFA /* kern_guc.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_guc.hpp; sourceTree = "<group>"; };
 		CEA51CAF2042B29B00CDD1E9 /* kern_regs.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = kern_regs.hpp; sourceTree = "<group>"; };
+		F633AE27205D4EE5005FCD5D /* ISSUE_TEMPLATE.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = ISSUE_TEMPLATE.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -81,6 +83,7 @@
 		1C748C1D1C21952C0024EED2 = {
 			isa = PBXGroup;
 			children = (
+				F633AE26205D4EE5005FCD5D /* .github */,
 				1CF01C911C8CF982002DCEA3 /* Docs */,
 				1C748C291C21952C0024EED2 /* IntelGraphicsFixup */,
 				CE405EC81E49DD7B00AA0B3D /* SDK */,
@@ -165,6 +168,14 @@
 			name = SDK;
 			sourceTree = "<group>";
 		};
+		F633AE26205D4EE5005FCD5D /* .github */ = {
+			isa = PBXGroup;
+			children = (
+				F633AE27205D4EE5005FCD5D /* ISSUE_TEMPLATE.md */,
+			);
+			path = .github;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -237,6 +248,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F633AE28205D4EE5005FCD5D /* ISSUE_TEMPLATE.md in Resources */,
 				CE22EA3D2039ECF1002A88A5 /* IntelFramebuffer.bt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
