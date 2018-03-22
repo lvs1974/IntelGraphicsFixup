@@ -378,6 +378,16 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 		}
 	}
 
+	int gl = provider->getProperty("disable-metal") != nullptr;
+	PE_parse_boot_argn("igfxgl", &gl, sizeof(gl));
+
+	if (gl) {
+		DBGLOG("igfx", "disabling metal support");
+		that->removeProperty("MetalPluginClassName");
+		that->removeProperty("MetalPluginName");
+		that->removeProperty("MetalStatisticsName");
+	}
+
 	return callbackIgfx->orgGraphicsStart(that, provider);
 }
 
