@@ -67,7 +67,7 @@ IntelGraphicsFixup Changelog
 
 #### v1.2.7
 - Add `igfxgl=1` boot argument (and `disable-metal` property) to disable Metal support
-- Add `igfxsnb=1` boot argument (and `modern-sandy` property) to rename Gen6Accelerator with IntelAccelerator to fix GVA warnings
+- Implement Gen6Accelerator with IntelAccelerator rename to fix GVA warnings (use `igfxsnb=0` boot argument to disable)
 - Harden solved symbol verification to avoid panics with broken kext cache
 - Replace connector-less Sandy Bridge framebuffer for unsupported macmodels from 0x30030 to 0x50000
 
