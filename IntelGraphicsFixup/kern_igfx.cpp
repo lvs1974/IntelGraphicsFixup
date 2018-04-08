@@ -389,7 +389,6 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 	}
 
 	if (CPUInfo::getGeneration() == CPUInfo::CpuGeneration::SandyBridge) {
-		callbackIgfx->moderniseAccelerator = provider->getProperty("modern-sandy") != nullptr;
 		PE_parse_boot_argn("igfxsnb", &callbackIgfx->moderniseAccelerator, sizeof(callbackIgfx->moderniseAccelerator));
 		if (callbackIgfx->moderniseAccelerator)
 			that->setName("IntelAccelerator");

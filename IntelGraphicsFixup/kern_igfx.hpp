@@ -324,7 +324,7 @@ private:
 	/**
 	 *  Set modern name to Sandy Accelerator
 	 */
-	int moderniseAccelerator {0};
+	int moderniseAccelerator {1};
 
 	/**
 	 *  Loaded vinfo
