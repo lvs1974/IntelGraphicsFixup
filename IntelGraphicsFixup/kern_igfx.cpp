@@ -1240,13 +1240,13 @@ void IGFX::correctGraphicsProperties(IORegistryEntry *obj, const char *name) {
 	}
 }
 
-void IGFX::loadIGScheduler4Patches(KernelPatcher &patcher, size_t index) {
-	gKmGen9GuCBinary = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL17__KmGen9GuCBinary"));
+void IGFX::loadIGScheduler4Patches(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+	gKmGen9GuCBinary = patcher.solveSymbol<uint8_t *>(index, "__ZL17__KmGen9GuCBinary", address, size);
 	if (gKmGen9GuCBinary) {
 		DBGLOG("igfx", "obtained __KmGen9GuCBinary");
 		patcher.clearError();
 
-		auto loadGuC = patcher.solveSymbol(index, "__ZN13IGHardwareGuC13loadGuCBinaryEv");
+		auto loadGuC = patcher.solveSymbol(index, "__ZN13IGHardwareGuC13loadGuCBinaryEv", address, size);
 		if (loadGuC) {
 			DBGLOG("igfx", "obtained IGHardwareGuC::loadGuCBinary");
 			patcher.clearError();
@@ -1280,7 +1280,7 @@ void IGFX::loadIGScheduler4Patches(KernelPatcher &patcher, size_t index) {
 			SYSLOG("igfx", "failed to resolve IGHardwareGuC::loadGuCBinary");
 		}
 
-		auto loadFW = patcher.solveSymbol(index, "__ZN12IGScheduler412loadFirmwareEv");
+		auto loadFW = patcher.solveSymbol(index, "__ZN12IGScheduler412loadFirmwareEv", address, size);
 		if (loadFW) {
 			DBGLOG("igfx", "obtained IGScheduler4::loadFirmware");
 			patcher.clearError();
@@ -1294,7 +1294,7 @@ void IGFX::loadIGScheduler4Patches(KernelPatcher &patcher, size_t index) {
 			SYSLOG("igfx", "failed to resolve IGScheduler4::loadFirmware");
 		}
 
-		auto initSched = patcher.solveSymbol(index, "__ZN13IGHardwareGuC16initSchedControlEv");
+		auto initSched = patcher.solveSymbol(index, "__ZN13IGHardwareGuC16initSchedControlEv", address, size);
 		if (initSched) {
 			DBGLOG("igfx", "obtained IGHardwareGuC::initSchedControl");
 			patcher.clearError();
@@ -1311,8 +1311,8 @@ void IGFX::loadIGScheduler4Patches(KernelPatcher &patcher, size_t index) {
 	}
 }
 
-void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
-	signaturePointer[0] = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL13__KmGuCBinary"));
+void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+	signaturePointer[0] = patcher.solveSymbol<uint8_t *>(index, "__ZL13__KmGuCBinary", address, size);
 	if (signaturePointer[0]) {
 		DBGLOG("igfx", "obtained __KmGuCBinary pointer");
 	} else {
@@ -1320,7 +1320,7 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		return;
 	}
 
-	signaturePointer[1] = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL13__KmHuCBinary"));
+	signaturePointer[1] = patcher.solveSymbol<uint8_t *>(index, "__ZL13__KmHuCBinary", address, size);
 	if (signaturePointer[1]) {
 		DBGLOG("igfx", "obtained __KmHuCBinary pointer");
 	} else {
@@ -1328,11 +1328,11 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		return;
 	}
 
-	canUseSpringboard = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZN5IGGuC18fCanUseSpringboardE"));
+	canUseSpringboard = patcher.solveSymbol<uint8_t *>(index, "__ZN5IGGuC18fCanUseSpringboardE", address, size);
 	if (canUseSpringboard) {
 		DBGLOG("igfx", "found IGGuC::fCanUseSpringboard");
 	} else {
-		canUseSpringboard = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZN5IGGuC20m_bCanUseSpringboardE"));
+		canUseSpringboard = patcher.solveSymbol<uint8_t *>(index, "__ZN5IGGuC20m_bCanUseSpringboardE", address, size);
 		if (canUseSpringboard) {
 			DBGLOG("igfx", "found IGGuC::fCanUseSpringboard");
 		} else {
@@ -1341,7 +1341,7 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		}
 	}
 
-	orgSafeForceWake =  reinterpret_cast<t_safe_force_wake>(patcher.solveSymbol(index, "__ZN16IntelAccelerator13SafeForceWakeEbj"));
+	orgSafeForceWake =  patcher.solveSymbol<t_safe_force_wake>(index, "__ZN16IntelAccelerator13SafeForceWakeEbj", address, size);
 	if (orgSafeForceWake) {
 		DBGLOG("igfx", "obtained IntelAccelerator::SafeForceWake");
 	} else {
@@ -1349,7 +1349,7 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		return;
 	}
 
-	auto loadGuC = patcher.solveSymbol(index, "__ZN5IGGuC10loadBinaryEb");
+	auto loadGuC = patcher.solveSymbol(index, "__ZN5IGGuC10loadBinaryEb", address, size);
 	if (loadGuC) {
 		DBGLOG("igfx", "obtained IGGuC::loadBinary");
 		patcher.clearError();
@@ -1362,7 +1362,7 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		SYSLOG("igfx", "failed to resolve IGGuC::loadBinary");
 	}
 
-	auto initSched = patcher.solveSymbol(index, "__ZN5IGGuC11initGucCtrlEPV9IGGucCtrl");
+	auto initSched = patcher.solveSymbol(index, "__ZN5IGGuC11initGucCtrlEPV9IGGucCtrl", address, size);
 	if (initSched) {
 		DBGLOG("igfx", "obtained IGGuC::initGucCtrl");
 		patcher.clearError();
@@ -1375,7 +1375,7 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		SYSLOG("igfx", "failed to resolve IGGuC::initGucCtrl");
 	}
 
-	auto initIntr = patcher.solveSymbol(index, "__ZN5IGGuC21initInterruptServicesEv");
+	auto initIntr = patcher.solveSymbol(index, "__ZN5IGGuC21initInterruptServicesEv", address, size);
 	if (initIntr) {
 		DBGLOG("igfx", "obtained IGGuC::initInterruptServices");
 		patcher.clearError();
@@ -1388,7 +1388,7 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		SYSLOG("igfx", "failed to resolve IGGuC::initInterruptServices");
 	}
 
-	auto canLoad = patcher.solveSymbol(index, "__ZN5IGGuC15canLoadFirmwareEP22IOGraphicsAccelerator2");
+	auto canLoad = patcher.solveSymbol(index, "__ZN5IGGuC15canLoadFirmwareEP22IOGraphicsAccelerator2", address, size);
 	if (canLoad) {
 		DBGLOG("igfx", "obtained IGGuC::canLoadFirmware");
 		patcher.clearError();// mov eax,1
@@ -1403,7 +1403,7 @@ void IGFX::loadIGGuCPatches(KernelPatcher &patcher, size_t index) {
 		SYSLOG("igfx", "failed to resolve IGGuC::canLoadFirmware");
 	}
 
-	auto dmaMap = patcher.solveSymbol(index, "__ZN5IGGuC12dmaHostToGuCEyjjNS_12IGGucDmaTypeEb");
+	auto dmaMap = patcher.solveSymbol(index, "__ZN5IGGuC12dmaHostToGuCEyjjNS_12IGGucDmaTypeEb", address, size);
 	if (dmaMap) {
 		DBGLOG("igfx", "obtained IGGuC::dmaHostToGuC");
 		patcher.clearError();
@@ -1428,11 +1428,11 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 					 i == KextBDWGraphics || i == KextSKLGraphics || i == KextKBLGraphics)) {
 					mach_vm_address_t sessionCallback = 0;
 					if (i == KextHD3000Graphics)
-						sessionCallback = patcher.solveSymbol(index, "__ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+						sessionCallback = patcher.solveSymbol(index, "__ZN15Gen6Accelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb", address, size);
 					else if (i == KextHD4000Graphics)
-						sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb");
+						sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_t18PAVPSessionAppID_tPjb", address, size);
 					else
-						sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb");
+						sessionCallback = patcher.solveSymbol(index, "__ZN16IntelAccelerator19PAVPCommandCallbackE22PAVPSessionCommandID_tjPjb", address, size);
 					if (sessionCallback) {
 						DBGLOG("igfx", "obtained PAVPCommandCallback");
 						patcher.clearError();
@@ -1448,10 +1448,10 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 				}
 
 				if (!(progressState & ProcessingState::CallbackFrameBufferInitRouted) && i == KextIOGraphicsFamily) {
-					gIOFBVerboseBootPtr = reinterpret_cast<uint8_t *>(patcher.solveSymbol(index, "__ZL16gIOFBVerboseBoot"));
+					gIOFBVerboseBootPtr = patcher.solveSymbol<uint8_t *>(index, "__ZL16gIOFBVerboseBoot", address, size);
 					if (gIOFBVerboseBootPtr) {
 						DBGLOG("igfx", "obtained gIOFBVerboseBoot");
-						auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv");
+						auto ioFramebufferinit = patcher.solveSymbol(index, "__ZN13IOFramebuffer6initFBEv", address, size);
 						if (ioFramebufferinit) {
 							DBGLOG("igfx", "obtained IOFramebuffer::initFB");
 							patcher.clearError();
@@ -1469,7 +1469,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 
 				if (!(progressState & ProcessingState::CallbackComputeLaneCountRouted) &&
 					(i == KextSKLGraphicsFramebuffer || i == KextKBLGraphicsFramebuffer)) {
-					auto compLane = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj");
+					auto compLane = patcher.solveSymbol(index, "__ZN31AppleIntelFramebufferController16ComputeLaneCountEPK29IODetailedTimingInformationV2jjPj", address, size);
 					if (compLane) {
 						DBGLOG("igfx", "obtained ComputeLaneCount");
 						patcher.clearError();
@@ -1489,7 +1489,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 					(i == KextHD3000Graphics || i == KextHD4000Graphics || i == KextHD5000Graphics ||
 					 i == KextBDWGraphics || i == KextSKLGraphics || i == KextKBLGraphics)) {
 					auto acceleratorStart = patcher.solveSymbol(index, i == KextHD3000Graphics ?
-							"__ZN15Gen6Accelerator5startEP9IOService" : "__ZN16IntelAccelerator5startEP9IOService");
+							"__ZN15Gen6Accelerator5startEP9IOService" : "__ZN16IntelAccelerator5startEP9IOService", address, size);
 					if (acceleratorStart) {
 						DBGLOG("igfx", "obtained Accelerator::start");
 						patcher.clearError();
@@ -1506,7 +1506,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 
 				if (!(progressState & ProcessingState::CallbackGuCFirmwareUpdateRouted) && (i == KextSKLGraphics || i == KextKBLGraphics)) {
 					if (decideLoadScheduler != BasicScheduler) {
-						auto bufferWithOptions = patcher.solveSymbol(index, "__ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj");
+						auto bufferWithOptions = patcher.solveSymbol(index, "__ZN20IGSharedMappedBuffer11withOptionsEP11IGAccelTaskmjj", address, size);
 						if (bufferWithOptions) {
 							DBGLOG("igfx", "obtained IGSharedMappedBuffer::withOptions");
 							patcher.clearError();
@@ -1519,7 +1519,7 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 							SYSLOG("igfx", "failed to resolve IGSharedMappedBuffer::withOptions");
 						}
 
-						auto getGpuVaddr = patcher.solveSymbol(index, "__ZNK14IGMappedBuffer20getGPUVirtualAddressEv");
+						auto getGpuVaddr = patcher.solveSymbol(index, "__ZNK14IGMappedBuffer20getGPUVirtualAddressEv", address, size);
 						if (getGpuVaddr) {
 							DBGLOG("igfx", "obtained IGMappedBuffer::getGPUVirtualAddress");
 							patcher.clearError();
@@ -1533,10 +1533,10 @@ void IGFX::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t a
 						}
 
 						if (decideLoadScheduler == ReferenceScheduler)
-							loadIGScheduler4Patches(patcher, index);
+							loadIGScheduler4Patches(patcher, index, address, size);
 #ifdef IGFX_APPLE_SCHEDULER
 						if (decideLoadScheduler == AppleScheduler || deviceLoadScheduler == AppleCustomScheduler)
-							loadIGGuCPatches(patcher, index);
+							loadIGGuCPatches(patcher, index, address, size);
 #endif
 					}
 

@@ -73,3 +73,7 @@ In order to boot with `igfxgl=1` on 10.13.x you may need to set the defaults:
 sudo defaults write /Library/Preferences/com.apple.CoreDisplay useMetal -boolean no
 sudo defaults write /Library/Preferences/com.apple.CoreDisplay useIOP -boolean no
 ```
+
+### v1.2.8
+- Harden solved symbol verification to avoid panics with broken kext cache
+
