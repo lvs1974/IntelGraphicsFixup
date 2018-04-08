@@ -1120,7 +1120,7 @@ uint32_t IGFX::getFramebufferId(IORegistryEntry *igpu, bool hasAMD, bool hasNVID
 				// Note, that setting non-standard connector-less frame may result in 2 GPUs visible
 				// in System Report for whatever reason (at least on KabyLake).
 				if (cpuGeneration == CPUInfo::CpuGeneration::SandyBridge)
-					platform = CPUInfo::ConnectorLessSandyBridgePlatformId1;
+					platform = CPUInfo::ConnectorLessSandyBridgePlatformId2;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::IvyBridge)
 					platform = CPUInfo::ConnectorLessIvyBridgePlatformId2;
 				else if (cpuGeneration == CPUInfo::CpuGeneration::Haswell)
