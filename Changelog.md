@@ -76,4 +76,4 @@ sudo defaults write /Library/Preferences/com.apple.CoreDisplay useIOP -boolean n
 
 ### v1.2.8
 - Harden solved symbol verification to avoid panics with broken kext cache
-
+- Replace connector-less Sandy Bridge framebuffer for unsupported macmodels from 0x30030 to 0x50000
