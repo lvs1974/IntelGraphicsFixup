@@ -388,6 +388,13 @@ bool IGFX::intelGraphicsStart(IOService *that, IOService *provider) {
 		that->removeProperty("MetalStatisticsName");
 	}
 
+	if (CPUInfo::getGeneration() == CPUInfo::CpuGeneration::SandyBridge) {
+		callbackIgfx->moderniseAccelerator = provider->getProperty("modern-sandy") != nullptr;
+		PE_parse_boot_argn("igfxsnb", &callbackIgfx->moderniseAccelerator, sizeof(callbackIgfx->moderniseAccelerator));
+		if (callbackIgfx->moderniseAccelerator)
+			that->setName("IntelAccelerator");
+	}
+
 	return callbackIgfx->orgGraphicsStart(that, provider);
 }
 
@@ -964,6 +971,25 @@ bool IGFX::loadCustomBinary(void *that, bool restore) {
 	return false;
 }
 
+OSObject *IGFX::copyExistingServices(OSDictionary *matching, IOOptionBits inState, IOOptionBits options) {
+	if (callbackIgfx && callbackIgfx->orgCopyExistingServices) {
+		if (callbackIgfx->moderniseAccelerator && matching && inState == kIOServiceMatchedState && options == 0) {
+			auto name = OSDynamicCast(OSString, matching->getObject(gIONameMatchKey));
+			if (name) {
+				DBGLOG("igfx", "found matching request by name %s", name->getCStringNoCopy());
+				if (name->isEqualTo("Gen6Accelerator")) {
+					DBGLOG("igfx", "found and fixed Gen6Accelerator request");
+					matching->setObject(gIONameMatchKey, OSString::withCString("IntelAccelerator"));
+				}
+			}
+		}
+
+		return callbackIgfx->orgCopyExistingServices(matching, inState, options);
+	}
+
+	return nullptr;
+}
+
 void IGFX::processKernel(KernelPatcher &patcher) {
 	// We need to load vinfo in all cases but reset
 	if (resetFramebuffer != FBRESET) {
@@ -980,6 +1006,23 @@ void IGFX::processKernel(KernelPatcher &patcher) {
 		}
 
 		// Ignore all the errors for other processors
+		patcher.clearError();
+	}
+
+	// This is necessary, because Sandy VAD bundle refers to Gen6Accelerator (unlike AppleGVA, which forces IntelAccelerator).
+	if (CPUInfo::getGeneration() == CPUInfo::CpuGeneration::SandyBridge) {
+		auto copyServices = patcher.solveSymbol(KernelPatcher::KernelID, "__ZN9IOService20copyExistingServicesEP12OSDictionaryjj");
+		if (copyServices) {
+			orgCopyExistingServices = reinterpret_cast<t_copy_existing_services>(patcher.routeFunction(copyServices, reinterpret_cast<mach_vm_address_t>(copyExistingServices), true));
+			if (patcher.getError() == KernelPatcher::Error::NoError)
+				DBGLOG("igfx", "routed __ZN9IOService20copyExistingServicesEP12OSDictionaryjj");
+			else
+				SYSLOG("igfx", "failed to route __ZN9IOService20copyExistingServicesEP12OSDictionaryjj");
+
+		} else {
+			SYSLOG("igfx", "failed to obtain __ZN9IOService20copyExistingServicesEP12OSDictionaryjj");
+		}
+
 		patcher.clearError();
 	}
 
