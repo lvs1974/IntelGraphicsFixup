@@ -65,16 +65,20 @@ private:
 	 *
 	 *  @param patcher KernelPatcher instance
 	 *  @param index   kinfo handle
+	 *  @param address kinfo load address
+	 *  @param size    kinfo memory size
 	 */
-	void loadIGScheduler4Patches(KernelPatcher &patcher, size_t index);
+	void loadIGScheduler4Patches(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
 
 	/**
 	 *  Patch kext to support loading IGGuC.
 	 *
 	 *  @param patcher KernelPatcher instance
 	 *  @param index   kinfo handle
+	 *  @param address kinfo load address
+	 *  @param size    kinfo memory size
 	 */
-	void loadIGGuCPatches(KernelPatcher &patcher, size_t index);
+	void loadIGGuCPatches(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
 
 	/**
 	 *  Runs over the devices (if not done previously) and corrects their properties.
