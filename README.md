@@ -14,6 +14,8 @@ An open source kernel extension providing patches to select Intel GPUs.
 - Allows booting in VESA mode with Intel HD graphics (via `-igfxvesa` boot argument)
 - Performs basic framebuffer id injection when none is specified (connector-less frames will be used with discrete GPUs)
 - Allows GuC microcode loading with Intel Skylake/Kaby Lake Graphics in 10.13 (via `igfxfw=1` boot argument)
+- Renames Gen6Accelerator with IntelAccelerator for Sandy Bridge CPUs for GVA support (via `igfxsnb=1` boot argument or `modern-sandy` property)
+- Allows booting with OpenGL-only acceleration (via `ngfxgl=0` boot argument or `disable-metal` property)
 
 #### Configuration
 Add `-igfxdbg` to enable debug printing (available in DEBUG binaries).  
@@ -23,6 +25,8 @@ Add `-igfxvesa` to boot Intel graphics without hardware acceleration (VESA mode)
 Add `igfxfw=1` to enable GuC microcode loading in 10.13 or newer.  
 Add `igfxrst=1` to prefer drawing Apple logo at 2nd boot stage instead of framebuffer copying.  
 Add `igfxframe=frame` to inject a dedicated framebuffer identifier into IGPU (only for TESTING purposes).  
+Add `igfxsnb=1` to ensure proper IntelAccelerator name for Sandy Bridge CPUs for GVA support  
+Add `ngfxgl=0` to disable Metal support  
 
 #### Credits
 - [Apple](https://www.apple.com) for macOS  

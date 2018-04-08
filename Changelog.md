@@ -66,14 +66,13 @@ IntelGraphicsFixup Changelog
 - Ensure standard connector-less framebuffers are used
 
 #### v1.2.7
-- Added `igfxgl=1` boot argument (and `disable-metal` property) to disable Metal support
+- Add `igfxgl=1` boot argument (and `disable-metal` property) to disable Metal support
+- Add `igfxsnb=1` boot argument (and `modern-sandy` property) to rename Gen6Accelerator with IntelAccelerator to fix GVA warnings
+- Harden solved symbol verification to avoid panics with broken kext cache
+- Replace connector-less Sandy Bridge framebuffer for unsupported macmodels from 0x30030 to 0x50000
 
 In order to boot with `igfxgl=1` on 10.13.x you may need to set the defaults:
 ```
 sudo defaults write /Library/Preferences/com.apple.CoreDisplay useMetal -boolean no
 sudo defaults write /Library/Preferences/com.apple.CoreDisplay useIOP -boolean no
 ```
-
-### v1.2.8
-- Harden solved symbol verification to avoid panics with broken kext cache
-- Replace connector-less Sandy Bridge framebuffer for unsupported macmodels from 0x30030 to 0x50000

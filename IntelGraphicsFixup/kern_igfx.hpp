@@ -177,6 +177,8 @@ private:
 
 	using t_safe_force_wake = void (*)(void *that, bool a, uint32_t b);
 
+	using t_copy_existing_services = OSObject *(*)(OSDictionary *matching, IOOptionBits inState, IOOptionBits options);
+
 	/**
 	 *  Hooked methods / callbacks
 	 */
@@ -193,6 +195,7 @@ private:
 	static uint64_t igBufferGetGpuVirtualAddress(void *that);
 	static bool dmaHostToGuC(void *that, uint64_t gpuAddr, uint32_t gpuReg, uint32_t dataLen, uint32_t dmaType, bool unk);
 	static void initInterruptServices(void *that);
+	static OSObject *copyExistingServices(OSDictionary *matching, IOOptionBits inState, IOOptionBits options);
 
 	/**
 	 *  IGPU PCI Config device-id faking wrappers
@@ -221,6 +224,7 @@ private:
 	t_dma_host_to_guc orgDmaHostToGuC {nullptr};
 	t_init_intr_services orgInitInterruptServices {nullptr};
 	t_safe_force_wake orgSafeForceWake {nullptr};
+	t_copy_existing_services orgCopyExistingServices {nullptr};
 
 	/**
 	 *  Original IGPU PCI Config readers
@@ -316,6 +320,11 @@ private:
 	 *  External GPU status
 	 */
 	bool hasExternalAMD {false};
+
+	/**
+	 *  Set modern name to Sandy Accelerator
+	 */
+	int moderniseAccelerator {0};
 
 	/**
 	 *  Loaded vinfo
