@@ -9,10 +9,17 @@
 #include <Headers/kern_cpu.hpp>
 #include <Headers/kern_iokit.hpp>
 #include <Library/LegacyIOService.h>
+
+#include <IOKit/IOPlatformExpert.h>
+#include <Availability.h>
 #include <IOKit/IOPlatformExpert.h>
 #define protected public
 #include <IOKit/graphics/IOFramebuffer.h>
 #undef protected
+
+#ifndef __MAC_10_13
+#define fVramMap vramMap
+#endif
 
 #include "kern_igfx.hpp"
 #include "kern_audio.hpp"

@@ -12,13 +12,11 @@
 		1C9CB7B11C789FF500231E41 /* kern_igfx.hpp in Headers */ = {isa = PBXBuildFile; fileRef = 1C9CB7AF1C789FF500231E41 /* kern_igfx.hpp */; };
 		CE22EA3A2038BE8A002A88A5 /* kern_model.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE22EA382038BE8A002A88A5 /* kern_model.cpp */; };
 		CE22EA3B2038BE8A002A88A5 /* kern_model.hpp in Headers */ = {isa = PBXBuildFile; fileRef = CE22EA392038BE8A002A88A5 /* kern_model.hpp */; };
-		CE22EA3D2039ECF1002A88A5 /* IntelFramebuffer.bt in Resources */ = {isa = PBXBuildFile; fileRef = CE22EA3C2039ECF1002A88A5 /* IntelFramebuffer.bt */; };
 		CE22EA402039F064002A88A5 /* kern_audio.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE22EA3E2039F063002A88A5 /* kern_audio.cpp */; };
 		CE22EA412039F064002A88A5 /* kern_audio.hpp in Headers */ = {isa = PBXBuildFile; fileRef = CE22EA3F2039F064002A88A5 /* kern_audio.hpp */; };
 		CE405EC91E49DD9700AA0B3D /* libkmod.a in Frameworks */ = {isa = PBXBuildFile; fileRef = CE405EC71E49DD7100AA0B3D /* libkmod.a */; };
 		CE405ED91E4A080700AA0B3D /* plugin_start.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE405ED81E4A080700AA0B3D /* plugin_start.cpp */; };
 		CE6A853D203AB2D200B8FFFA /* kern_guc.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CE6A853C203AB2D100B8FFFA /* kern_guc.cpp */; };
-		F633AE28205D4EE5005FCD5D /* ISSUE_TEMPLATE.md in Resources */ = {isa = PBXBuildFile; fileRef = F633AE27205D4EE5005FCD5D /* ISSUE_TEMPLATE.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -248,8 +246,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F633AE28205D4EE5005FCD5D /* ISSUE_TEMPLATE.md in Resources */,
-				CE22EA3D2039ECF1002A88A5 /* IntelFramebuffer.bt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -268,7 +264,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "cd \"${TARGET_BUILD_DIR}\"\n\ndist=(\"$FULL_PRODUCT_NAME\")\nif [ -d \"$DWARF_DSYM_FILE_NAME\" ]; then dist+=(\"$DWARF_DSYM_FILE_NAME\"); fi\n\narchive=\"${MODULE_VERSION} ($(echo $CONFIGURATION | tr /a-z/ /A-Z/)).zip\"\nrm -rf *.zip\nif [ \"$CONFIGURATION\" == \"Release\" ]; then strip -x -T \"${EXECUTABLE_PATH}\"; fi\nzip -qry \"${archive}\" \"${dist[@]}\"";
+			shellScript = "cd \"${TARGET_BUILD_DIR}\"\n\ndist=(\"$FULL_PRODUCT_NAME\")\nif [ -d \"$DWARF_DSYM_FILE_NAME\" ]; then dist+=(\"$DWARF_DSYM_FILE_NAME\"); fi\n\narchive=\"${MODULE_VERSION} ($(echo $CONFIGURATION | tr /a-z/ /A-Z/)).zip\"\nrm -rf *.zip\nif [ \"$CONFIGURATION\" == \"Release\" ]; then\n  strip -x -T \"${EXECUTABLE_PATH}\" &>/dev/null || strip -x \"${EXECUTABLE_PATH}\"\nfi\nzip -qry \"${archive}\" \"${dist[@]}\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -293,7 +289,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++1y";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
@@ -340,7 +336,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++1y";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
