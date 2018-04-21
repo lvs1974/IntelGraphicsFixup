@@ -451,6 +451,14 @@ string connectorToPrintable(ConnectorInfo &con) {
     return out;
 }
 
+string connectorToHex(ConnectorInfo &c) {
+    local string out;
+    SPrintf(out, "%02X%02X%02X%02X %08X %08X", c.index, c.busId, c.pipe, c.pad, 
+        ((c.type>>24)&0xff) | ((c.type<<8)&0xff0000) | ((c.type>>8)&0xff00) | ((c.type<<24)&0xff000000),
+        ((c.flags.value>>24)&0xff) | ((c.flags.value<<8)&0xff0000) | ((c.flags.value>>8)&0xff00) | ((c.flags.value<<24)&0xff000000));
+    return out;
+}
+
 string framebufferFlagsToPrintable(FramebufferFlags &flags) {
     local string out;
     SPrintf(out, "%08X", flags.value);
@@ -549,6 +557,8 @@ while (pos < size) {
             frames[i].fPortCount, frames[i].fFBMemoryCount);
         for (j = 0; j < frames[i].fPortCount; j++)
             Printf("%s\n", connectorToPrintable(frames[i].connectors[j]));
+        for (j = 0; j < frames[i].fPortCount; j++)
+            Printf("%s\n", connectorToHex(frames[i].connectors[j]));
         Printf("\n");
         /* There is no -1 termination on Sandy */
         if (firstId == FirstSandyBridgeId && i == 7) break;
@@ -573,6 +583,8 @@ if (firstId == FirstSandyBridgeId) {
                 frames[i].fPortCount, frames[i].fFBMemoryCount);
             for (j = 0; j < frames[i].fPortCount; j++)
                 Printf("%s\n", connectorToPrintable(frames[i].connectors[j]));
+            for (j = 0; j < frames[i].fPortCount; j++)
+                Printf("%s\n", connectorToHex(frames[i].connectors[j]));
             Printf("\n");
             break;
         } else {
